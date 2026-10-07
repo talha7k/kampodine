@@ -45,7 +45,21 @@ SSH_KEY="${ESPELLAR_SSH_KEY:-}"
 
 say() { printf '\033[1;32m[vm-prepare]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[vm-prepare] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
-usage() { grep '^#   kampodine vm-prepare' "$0" | sed 's/^#   //'; exit 0; }
+usage() {
+  cat <<'EOF'
+Usage:
+  kampodine vm-prepare --host root@<new-ip> [--pull-images] [--ssh-key <path>]
+
+Examples:
+EOF
+  grep '^#   kampodine vm-prepare' "$0" | sed 's/^#   //'
+  cat <<'EOF'
+
+Host/key resolution: --host | (no env default — explicit flag);
+--ssh-key | ESPELLAR_SSH_KEY | ssh-agent / ~/.ssh/config.
+EOF
+  exit 0
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

@@ -17,6 +17,8 @@ const scripts = readdirSync(scriptsDir)
 const EXPECTED_SCRIPTS = [
   "bluegreen.sh",
   "deploy.sh",
+  "dns.sh",
+  "env.sh",
   "image-import.sh",
   "migrate.sh",
   "vm-prepare.sh",
@@ -100,7 +102,7 @@ describe("kampodine script gates", () => {
           if (ch === ")" && subdepth > 0) { subdepth--; continue; }
           if (ch === '"' && subdepth === 0) { inQuote = !inQuote; continue; }
           if ((!inQuote || subdepth > 0) && line.startsWith("oci ", j)) {
-            if (/^(?:iam|os|compute|network)\s/.test(line.slice(j + 4))) {
+            if (/^(?:iam|os|compute|network|dns)\s/.test(line.slice(j + 4))) {
               if (!line.includes("--profile")) {
                 failures.push(`${name}:${i + 1}: oci call without --profile: ${line}`);
               }

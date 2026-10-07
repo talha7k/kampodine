@@ -55,7 +55,22 @@ DOCKERFILE="${KAMPODINE_DOCKERFILE:-apps/api/Containerfile}"
 
 say() { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[deploy] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
-usage() { grep '^#   kampodine deploy' "$0" | sed 's/^#   //'; exit 0; }
+usage() {
+  cat <<'EOF'
+Usage:
+  kampodine deploy [--host root@<ip>] [--version <sha7>] [--rollback [<sha7>]]
+                   [--dockerfile <path>] [--ssh-key <path>] [--skip-smoke] [--refresh-config]
+
+Examples:
+EOF
+  grep '^#   kampodine deploy' "$0" | sed 's/^#   //'
+  cat <<'EOF'
+
+Host/key resolution: --host | ESPELLAR_HOST; --ssh-key | KAMPODINE_SSH_KEY |
+ESPELLAR_SSH_KEY | ssh-agent / ~/.ssh/config.
+EOF
+  exit 0
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

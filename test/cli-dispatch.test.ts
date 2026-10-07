@@ -18,9 +18,27 @@ const ALL_COMMANDS = [
   "deploy",
   "bluegreen",
   "vm-prepare",
+  "status",
   "image-import",
   "migrate",
+  "env",
+  "dns",
 ] as const;
+
+// The top-level index groups commands like vercel's — a missing heading or a
+// command outside its group is a help regression.
+const INDEX_GROUPS = ["DEPLOY", "INFRA", "DNS", "ENV"] as const;
+
+const COMMAND_GROUP: Record<(typeof ALL_COMMANDS)[number], string> = {
+  deploy: "DEPLOY",
+  bluegreen: "DEPLOY",
+  migrate: "DEPLOY",
+  "vm-prepare": "INFRA",
+  status: "INFRA",
+  "image-import": "INFRA",
+  env: "ENV",
+  dns: "DNS",
+};
 
 interface CliResult {
   status: number | null;
@@ -49,18 +67,40 @@ function expectUsageListsAllCommands(stdout: string): void {
 }
 
 describe("kampodine cli dispatch", () => {
-  test.each(["--help", "-h"])("%s exits 0 with usage listing all five commands", (flag) => {
+  test.each(["--help", "-h"])("%s exits 0 with usage listing all eight commands", (flag) => {
     const result = runCli([flag]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Usage:");
     expectUsageListsAllCommands(result.stdout);
   });
 
-  test("no args exits 0 with usage listing all five commands", () => {
+  test("no args exits 0 with the grouped command index listing all eight commands", () => {
     const result = runCli([]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Usage:");
     expectUsageListsAllCommands(result.stdout);
+  });
+
+  test("the command index is grouped (DEPLOY / INFRA / DNS / ENV) with every command under its group", () => {
+    const result = runCli(["--help"]);
+    expect(result.status).toBe(0);
+    for (const group of INDEX_GROUPS) {
+      expect(
+        result.stdout,
+        `missing ${group} group heading in the top-level index`,
+      ).toMatch(new RegExp(`\\n${group}\\n`));
+    }
+    // each command's index line must sit AFTER its group heading and BEFORE
+    // the next heading — the group mapping stays honest
+    for (const command of ALL_COMMANDS) {
+      const group = COMMAND_GROUP[command];
+      const groupAt = result.stdout.indexOf(`\n${group}\n`);
+      const nextHeads = INDEX_GROUPS.map((g) => result.stdout.indexOf(`\n${g}\n`))
+        .filter((at) => at > groupAt);
+      const sectionEnd = nextHeads.length > 0 ? Math.min(...nextHeads) : result.stdout.length;
+      const section = result.stdout.slice(groupAt, sectionEnd);
+      expect(section, `"${command}" must be listed under ${group}`).toContain(command);
+    }
   });
 
   test("--version prints the package.json version and exits 0", () => {
@@ -85,5 +125,19 @@ describe("kampodine cli dispatch", () => {
     // proves the arg passthrough reached the script.
     expect(result.stdout).toContain("kampodine deploy --version <sha7>");
     expect(result.stdout).toContain("kampodine deploy --rollback [<sha7>]");
+  });
+
+  test("env and dns dispatch to their scripts (passthrough proof)", () => {
+    // `env fingerprint` with stdin round-trips through env.sh — a pure local
+    // path that proves dispatch reached scripts/env.sh without any ssh/OCI.
+    const result = spawnSync(process.execPath, [cliPath, "env", "fingerprint"], {
+      cwd: pkgDir,
+      encoding: "utf8",
+      timeout: 20_000,
+      input: "PROBE_KEY=probe-value-abcdef\n",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("PROBE_KEY");
+    expect(result.stdout).not.toContain("probe-value-abcdef");
   });
 });

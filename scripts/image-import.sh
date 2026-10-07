@@ -39,7 +39,17 @@ KEEP_OBJECT=0
 
 say() { printf '[import] %s\n' "$*"; }
 die() { printf '[import][FAIL] %s\n' "$*" >&2; exit 1; }
-usage() { grep '^#   kampodine image-import' "$0" | sed 's/^#   //'; exit 0; }
+usage() {
+  cat <<'EOF'
+Usage:
+  kampodine image-import [--image <qcow2>] [--bucket <name>] [--name-prefix <p>]
+                         [--compartment <name>] [--from-pass] [--keep-object]
+
+Examples:
+EOF
+  grep '^#   kampodine image-import' "$0" | sed 's/^#   //'
+  exit 0
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

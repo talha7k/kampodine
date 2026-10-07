@@ -19,13 +19,29 @@ SERVICE="${SERVICE:-esellar-api}"
 
 log() { printf '[migrate-all] %s\n' "$*"; }
 fail() { printf '[migrate-all][FAIL] %s\n' "$*" >&2; exit 1; }
+usage() {
+  cat <<'EOF'
+Usage:
+  kampodine migrate [--allow-running]
+
+Examples:
+  kampodine migrate                    # stop the API first (rc-service esellar-api stop)
+  kampodine migrate --allow-running    # deliberate: migrate while the API serves (SQLITE_BUSY risk)
+
+Runs drizzle migrations over the libSQL dbs under TENANT_DIR (default
+/data/tenants): root.db first (auth/org plane), then tenant_*.db sorted,
+bounded-parallel (MIGRATE_JOBS, default 4). Per-file failures are collected;
+exits 1 if any failed.
+EOF
+  exit 0
+}
 
 ALLOW_RUNNING=0
 for arg in "$@"; do
   case "$arg" in
     --allow-running) ALLOW_RUNNING=1 ;;
-    -h|--help) echo "usage: $0 [--allow-running]"; exit 0 ;;
-    *) fail "unknown argument: $arg" ;;
+    -h|--help) usage ;;
+    *) fail "unknown argument: $arg (--help)" ;;
   esac
 done
 

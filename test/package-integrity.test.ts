@@ -23,6 +23,8 @@ const ALL_COMMANDS = [
   "status",
   "image-import",
   "migrate",
+  "env",
+  "dns",
 ] as const;
 
 const SEMVER_RE =

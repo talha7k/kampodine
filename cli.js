@@ -14,20 +14,34 @@ const commands = {
   "vm-prepare": "vm-prepare.sh",
   "image-import": "image-import.sh",
   migrate: "migrate.sh",
+  env: "env.sh",
+  dns: "dns.sh",
 };
 
+// Command index, grouped vercel-style. Every command (and every sub-step of
+// bluegreen/env/dns) answers --help with Usage + Examples — pinned by
+// test/help-coverage.test.ts.
 const usage = `kampodine — kamal-alternative CLI for Alpine + Podman deploys, built on kamal-proxy
 
 Usage: kampodine <command> [args...]
 
-Commands:
+DEPLOY
   deploy         stream deploy (podman save | ssh podman load) with sha-verified health gate; --rollback [sha] = instant image-tag rollback
-  bluegreen      reserved-IP blue/green pair: status (pair + reserved IP + health) | init | provision | flip | rollback
-  vm-prepare     first-run bootstrap of a bare Alpine host (OpenRC + podman stack)
-  image-import   golden qcow2 -> OCI custom image
+  bluegreen      reserved-IP blue/green pair: status | init | provision | flip | rollback (each sub-step has --help)
   migrate        tenant db migrations over SSH
 
-All further args pass through to the underlying script.
+INFRA
+  vm-prepare     first-run bootstrap of a bare Alpine host (OpenRC + podman stack)
+  image-import   golden qcow2 -> OCI custom image
+  status         live health through the proxy + the blue/green pair view
+
+DNS
+  dns            OCI DNS records (oci config-file / instance-principal auth ONLY): records | add | rm
+
+ENV
+  env            remote app env file (/etc/esellar/env, 0600): list | push | pull — values NEVER printed, fingerprints only
+
+Every command supports --help with usage + examples. All further args pass through to the underlying script.
 `;
 
 const [cmd, ...args] = process.argv.slice(2);

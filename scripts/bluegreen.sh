@@ -80,6 +80,95 @@ SSH_OPTS=(-o ConnectTimeout=6 -o BatchMode=yes -o StrictHostKeyChecking=accept-n
 say()  { printf '%s\n' "$*"; }
 die()  { printf '✋ %s\n' "$*" >&2; exit 1; }
 
+usage() {
+  printf 'Usage:\n'
+  grep '^#   kampodine bluegreen' "$0" | sed 's/^#   //'
+  cat <<'EOF'
+
+Each sub-step has its own --help: status | init | provision | flip | rollback.
+Env: OCI_PROFILE (default esellar-api), OCI_COMPARTMENT (default esellar).
+
+Examples:
+  kampodine bluegreen status
+  kampodine bluegreen init
+  kampodine bluegreen provision green
+  kampodine bluegreen flip --to green
+  kampodine bluegreen rollback
+EOF
+  exit 0
+}
+
+step_usage() {
+  case "$1" in
+    status)
+      cat <<'EOF'
+Usage:
+  kampodine bluegreen status
+
+Pair view: reserved IP + holder, both instances (ocid, ip, AD), per-color app
+health. Read-only.
+
+Examples:
+  kampodine bluegreen status
+EOF
+      ;;
+    init)
+      cat <<'EOF'
+Usage:
+  kampodine bluegreen init
+
+Create the DORMANT reserved public IP (unassigned — no instance attached).
+Idempotent: exits 0 when the reserved IP already exists.
+
+Examples:
+  kampodine bluegreen init
+EOF
+      ;;
+    provision)
+      cat <<'EOF'
+Usage:
+  kampodine bluegreen provision <blue|green>
+
+Launch the second instance from the golden image (native UEFI custom image,
+or the INJECT route when none exists), then vm-prepare it.
+
+Examples:
+  kampodine bluegreen provision green
+  kampodine vm-prepare --host root@<new-ip>   # after provision hands you the IP
+EOF
+      ;;
+    flip)
+      cat <<'EOF'
+Usage:
+  kampodine bluegreen flip --to <blue|green> [--force]
+
+ACME-first health-gated cutover: health gate on the target, the guest anchor
+watcher claims the reserved-IP half, OCI assigns, the cert issues on the
+target, verify through the reserved IP — any post-assign failure auto-rolls
+back.
+
+Examples:
+  kampodine bluegreen flip --to green
+  kampodine bluegreen flip --to green --force
+EOF
+      ;;
+    rollback)
+      cat <<'EOF'
+Usage:
+  kampodine bluegreen rollback
+
+Unassign the reserved IP back to DORMANT: holder guest cleanup (anchor.conf
+removal + address delete) then the OCI unassign. To move traffic to the other
+color of a real pair instead, use flip --to <other>.
+
+Examples:
+  kampodine bluegreen rollback
+EOF
+      ;;
+  esac
+  exit 0
+}
+
 compartment_ocid() {
   local ocid
   ocid="$(oci iam compartment list --all --profile "$PROFILE" \
@@ -357,6 +446,18 @@ inject_alpine() {
 }
 
 cmd="${1:-}"
+# Any -h/--help in the args answers with usage for that sub-step (exit 0) —
+# before any validation or OCI call, so help is always hermetic.
+for help_arg in "$@"; do
+  case "$help_arg" in
+    -h|--help)
+      case "$cmd" in
+        status|init|provision|flip|rollback) step_usage "$cmd" ;;
+        *) usage ;;
+      esac
+      ;;
+  esac
+done
 case "$cmd" in
   status)
     comp="$(compartment_ocid)"
