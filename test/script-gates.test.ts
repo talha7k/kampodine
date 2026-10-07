@@ -75,10 +75,10 @@ describe("kampodine script gates", () => {
     expect(failures, "non-executable scripts").toEqual([]);
   });
 
-  // The DEFAULT profile in ~/.oci/config is NOT the esellar tenancy profile —
+  // The DEFAULT profile in ~/.oci/config is NOT the kampodine tenancy profile —
   // every oci invocation must pin --profile (regression: image-import.sh ran
-  // bare `oci` and died with "compartment 'esellar' not found" even though
-  // `oci --profile esellar-api iam compartment list` worked). Static gate on
+  // bare `oci` and died with "compartment 'kampodine' not found" even though
+  // `oci --profile kampodine-api iam compartment list` worked). Static gate on
   // the first line of each invocation (the script convention places
   // --profile there). Message text inside plain double quotes doesn't count;
   // `VAR="$(oci …)"` DOES — code inside a command substitution is code even
@@ -118,7 +118,7 @@ describe("kampodine script gates", () => {
   // The OCI CLI applies --query PER PAGE: `compute image list` without --all
   // filters only the first page (default sort puts platform images there), so
   // a freshly imported custom image is invisible and bluegreen provision dies
-  // with "no esellar-alpine* custom image". Regression pin: image lookups
+  // with "no kampodine-alpine* custom image". Regression pin: image lookups
   // must page over everything (--all) before filtering.
   test("oci compute image list carries --all", () => {
     const failures: string[] = [];

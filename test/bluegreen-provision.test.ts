@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 // Hermetic behavioral tests for `bluegreen provision blue` + the ACME-first
 // `flip` / `rollback` flow:
 //
-//  - CUSTOM-IMAGE path: a UEFI_64 esellar-alpine* custom image
+//  - CUSTOM-IMAGE path: a UEFI_64 kampodine-alpine* custom image
 //    launches natively, no injection. The stub models two OCI CLI behaviors —
 //    `compute image list` first-page-only --query filtering without --all,
 //    and the post-query response shape.
@@ -24,7 +24,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 //    Alpine). BIOS-pinned imports must be SKIPPED, never launched.
 //  - ACME-FIRST FLIP: the flip is
 //    health gate -> anchor.conf written on the TARGET over ssh (the guest
-//    esellar-anchor watcher picks the address up) -> OCI assign -> ACME for
+//    kampodine-anchor watcher picks the address up) -> OCI assign -> ACME for
 //    the reserved-IP sslip hostname on the TARGET's kamal-proxy (HTTP-01
 //    needs the reserved ip already routed to the target — hence AFTER the
 //    assign) -> https through the reserved ip with a VALID cert + served-sha
@@ -43,7 +43,7 @@ const LAUNCHED = "ocid1.instance.oc1.test.blue-new";
 const BLUE_IP = "203.0.113.10";
 
 interface StubOpts {
-  // newest esellar-alpine* custom image id — null = none exists in the compartment
+  // newest kampodine-alpine* custom image id — null = none exists in the compartment
   customImage: string | null;
   // launch-options firmware the stub reports for that custom image
   customFirmware: string;
@@ -85,9 +85,9 @@ case "$args" in
     # blue appears RUNNING only AFTER the stub recorded the launch (stateful,
     # like real OCI). Post-query shape ("<id> <ad>" — the script's --query
     # selects id + availability-domain only).
-    if [[ "$args" == *"--display-name esellar-green"* ]]; then
+    if [[ "$args" == *"--display-name kampodine-green"* ]]; then
       echo "${GREEN_INSTANCE} LnzZ:ME-RIYADH-1-AD-1"
-    elif [[ "$args" == *"--display-name esellar-blue"* && -s "$LAUNCH_LOG" ]]; then
+    elif [[ "$args" == *"--display-name kampodine-blue"* && -s "$LAUNCH_LOG" ]]; then
       echo "${LAUNCHED} LnzZ:ME-RIYADH-1-AD-1"
     fi ;;
   *"compute instance get"*)
@@ -174,7 +174,7 @@ case "$args" in
     echo "ocid1.publicip.oc1.test.reserved 84.0.0.7 \${h:--}" ;;
   *"compute image list"*)
     # OCI applies --query per page: without --all the first page holds only
-    # platform images -> the esellar-alpine filter matches nothing.
+    # platform images -> the kampodine-alpine filter matches nothing.
     if [[ "$args" != *"--all"* ]]; then exit 0; fi
     ${customLine}
   *"compute instance launch"*)
@@ -267,7 +267,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "kampodine-bluegreen-"));
     // the golden disk artifact + ops key the injection path requires
-    qcow2 = join(tmp, "esellar-alpine.qcow2");
+    qcow2 = join(tmp, "kampodine-alpine.qcow2");
     writeFileSync(qcow2, "qcow2-bytes");
     keyfile = join(tmp, "id_ed25519.pub");
     writeFileSync(keyfile, "ssh-ed25519 AAAA test@ops");
@@ -282,6 +282,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
       env: {
         ...process.env,
         PATH: `${stub.bin}:${process.env.PATH}`,
+        OCI_COMPARTMENT: "test-compartment",
         ALPINE_QCOW2: qcow2,
         OPS_SSH_PUBKEY: keyfile,
         INJECT_PROBE_SLEEP: "0",
@@ -290,7 +291,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     });
   }
 
-  test("CUSTOM path: a UEFI_64 esellar-alpine* image launches natively — no injection machinery runs", () => {
+  test("CUSTOM path: a UEFI_64 kampodine-alpine* image launches natively — no injection machinery runs", () => {
     const stub = stubBin(tmp, { customImage: "ocid1.image.oc1.test.custom-uefi", customFirmware: "UEFI_64" });
     const result = runProvision(stub);
     const out = `${result.stdout}${result.stderr}`;
@@ -300,7 +301,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     expect(launch).toContain("--image-id ocid1.image.oc1.test.custom-uefi");
     expect(launch).toContain("--availability-domain LnzZ:ME-RIYADH-1-AD-1");
     expect(launch).toContain(`--subnet-id ${SUBNET}`);
-    expect(launch).toContain("--display-name esellar-blue");
+    expect(launch).toContain("--display-name kampodine-blue");
     // native golden image: no disk streaming, no qemu-img, no ssh
     expect(existsSync(stub.sshLog)).toBe(false);
     expect(existsSync(stub.qemuLog)).toBe(false);
@@ -317,7 +318,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     const launch = readFileSync(stub.launchLog, "utf8");
     expect(launch).toContain(`--image-id ${PLATFORM_IMAGE}`);
     expect(launch).toContain(`--ssh-authorized-keys-file ${keyfile}`);
-    expect(launch).toContain("--display-name esellar-blue");
+    expect(launch).toContain("--display-name kampodine-blue");
     // injection machinery: local qcow2->raw conversion, then the disk stream
     const qemu = readFileSync(stub.qemuLog, "utf8");
     expect(qemu).toContain("convert");
@@ -352,7 +353,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     expect(timeline.find((l) => l.includes("reboot"))).toContain(
       "ClientAliveInterval",
     );
-    expect(out).toContain(`INJECTED esellar-blue`);
+    expect(out).toContain(`INJECTED kampodine-blue`);
     expect(out).toContain(BLUE_IP);
   });
 
@@ -401,7 +402,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     const result = runProvision(stub, { OPS_SSH_PUBKEY: "" });
     const out = `${result.stdout}${result.stderr}`;
     expect(result.status, out).toBe(0);
-    expect(out).toContain("INJECTED esellar-blue");
+    expect(out).toContain("INJECTED kampodine-blue");
     const launch = readFileSync(stub.launchLog, "utf8");
     expect(launch).toMatch(/--ssh-authorized-keys-file \S+/);
   });
@@ -426,6 +427,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
       env: {
         ...process.env,
         PATH: `${stub.bin}:${process.env.PATH}`,
+        OCI_COMPARTMENT: "test-compartment",
         FLIP_POLL_SLEEP: "0",
         ...env,
       },
@@ -458,7 +460,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     // at the ANCHOR, never at the primary.
     const anchor = readFileSync(join(stub.launchLog, "..", "anchor.log"), "utf8");
     expect(anchor).toContain(`--vnic-id ${VNIC}`);
-    expect(anchor).toContain("esellar-reserved-anchor");
+    expect(anchor).toContain("kampodine-reserved-anchor");
     const flip = readFileSync(join(stub.launchLog, "..", "flip.log"), "utf8");
     expect(flip).toContain("--public-ip-id ocid1.publicip.oc1.test.reserved");
     expect(flip).toContain("--private-ip-id ocid1.privateip.oc1.test.anchor");
@@ -488,7 +490,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     // the per-instance health gate runs busybox wget ON the remote (the
     // golden image ships no curl — a curl-based gate calls healthy machines
     // "unhealthy"); the LOCAL https check stays curl
-    const healthProbe = timeline.find((l) => l.includes("esellar-api status"));
+    const healthProbe = timeline.find((l) => l.includes("kampodine-api status"));
     expect(healthProbe).toBeTruthy();
     expect(healthProbe).toContain("busybox wget");
     expect(healthProbe).not.toContain("curl");
@@ -528,7 +530,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     expect(anchor.match(/private-ip create/g) ?? []).toHaveLength(1);
     // target cleaned: anchor.conf removed + address deleted over ssh
     const ssh = readFileSync(stub.sshLog, "utf8");
-    expect(ssh).toMatch(/rm -f \/etc\/esellar\/anchor\.conf/);
+    expect(ssh).toMatch(/rm -f \/etc\/kampodine\/anchor\.conf/);
     expect(ssh).toMatch(/ip addr del .?10\.0\.0\.14\/24.?/);
     expect(existsSync(join(stub.launchLog, "..", "anchor-conf"))).toBe(false);
   });
@@ -547,6 +549,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
       env: {
         ...process.env,
         PATH: `${stub.bin}:${process.env.PATH}`,
+        OCI_COMPARTMENT: "test-compartment",
         FLIP_POLL_SLEEP: "0",
       },
     });
@@ -560,7 +563,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     expect(unassign).toContain("--private-ip-id --");
     expect(unassign).toContain("--wait-for-state AVAILABLE");
     const ssh = readFileSync(stub.sshLog, "utf8");
-    expect(ssh).toMatch(/rm -f \/etc\/esellar\/anchor\.conf/);
+    expect(ssh).toMatch(/rm -f \/etc\/kampodine\/anchor\.conf/);
     expect(ssh).toMatch(/ip addr del .?10\.0\.0\.14\/24.?/);
     // rollback never CREATES anything
     expect(existsSync(join(stub.launchLog, "..", "anchor.log"))).toBe(false);
@@ -570,7 +573,7 @@ describe("bluegreen provision (hermetic, stubbed oci/ssh/qemu-img)", () => {
     const stub = stubBin(tmp, { customImage: null, customFirmware: "UEFI_64" });
     const result = spawnSync("bash", [scriptPath, "rollback"], {
       encoding: "utf8",
-      env: { ...process.env, PATH: `${stub.bin}:${process.env.PATH}` },
+      env: { ...process.env, OCI_COMPARTMENT: "test-compartment", PATH: `${stub.bin}:${process.env.PATH}` },
     });
     const out = `${result.stdout}${result.stderr}`;
     expect(result.status, out).toBe(0);

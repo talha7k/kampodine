@@ -48,12 +48,12 @@ kampodine deploy:
 - **`kampodine deploy`** — stream deploy; `--version <sha>` restreams an
   existing build; `--rollback [sha]` is an instant image-tag rollback (the
   previous image stays on the VM for exactly this)
-- **`kampodine env`** — manage the remote app env file (`/etc/esellar/env`,
+- **`kampodine env`** — manage the remote app env file (`/etc/kampodine/env`,
   0600 root) without ever printing a secret: `list` shows KEY + fingerprints
   only (value length + first 2 chars), `push --file <env>` uploads over ssh
   stdin into a 0600 temp + atomic `mv`, `pull` streams the raw payload to
   stdout or `--out` (written 0600). Host/key resolution is identical to
-  deploy: `--host root@<ip>` | `ESPELLAR_HOST`, `--ssh-key <path>` |
+  deploy: `--host root@<ip>` | `KAMPODINE_HOST`, `--ssh-key <path>` |
   `KAMPODINE_SSH_KEY` | ssh-agent. `env fingerprint` previews the masking
   for any local file — values never leave stdin
 - **`kampodine dns`** — OCI DNS records for the post-sslip.io era:
