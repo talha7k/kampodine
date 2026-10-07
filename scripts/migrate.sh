@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../../.." && pwd)}"
 TENANT_DIR="${TENANT_DIR:-/data/tenants}"
-SERVICE="${SERVICE:-esellar-api}"
+SERVICE="${SERVICE:-kampodine-api}"
 
 log() { printf '[migrate-all] %s\n' "$*"; }
 fail() { printf '[migrate-all][FAIL] %s\n' "$*" >&2; exit 1; }
@@ -25,7 +25,7 @@ Usage:
   kampodine migrate [--allow-running]
 
 Examples:
-  kampodine migrate                    # stop the API first (rc-service esellar-api stop)
+  kampodine migrate                    # stop the API first (rc-service kampodine-api stop)
   kampodine migrate --allow-running    # deliberate: migrate while the API serves (SQLITE_BUSY risk)
 
 Runs drizzle migrations over the libSQL dbs under TENANT_DIR (default
@@ -51,11 +51,11 @@ command -v pnpm >/dev/null 2>&1 || fail "pnpm not found in PATH"
 [[ -d "$TENANT_DIR" ]] || fail "tenant dir ${TENANT_DIR} does not exist"
 
 # Writing schema while the API serves traffic risks SQLITE_BUSY on a single-writer
-# engine — the service must be stopped first (rc-service esellar-api stop). Override exists
+# engine — the service must be stopped first (rc-service kampodine-api stop). Override exists
 # for deliberate local use.
 if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
   if [[ $ALLOW_RUNNING -ne 1 ]]; then
-    fail "${SERVICE} is running — stop it first (rc-service esellar-api stop) or pass --allow-running"
+    fail "${SERVICE} is running — stop it first (rc-service kampodine-api stop) or pass --allow-running"
   fi
   log "WARNING: migrating while ${SERVICE} is running (--allow-running)"
 fi

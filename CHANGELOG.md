@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 — 2026-10-07
+
+**Breaking: project-generic naming.** Every origin-coupled default name is
+gone; the package now speaks only for itself.
+
+- `KAMPODINE_HOST` replaces `ESPELLAR_HOST` everywhere (deploy, env); the
+  key-resolution ladder is `--ssh-key` | `KAMPODINE_SSH_KEY` | ssh-agent /
+  ssh-config — the old `ESPELLAR_SSH_KEY` / `ESSELLAR_SSH_KEY` aliases are
+  no longer mentioned anywhere
+- Guest paths renamed: `/etc/esellar/*` → `/etc/kampodine/*` (env file,
+  deployed-sha, anchor.conf); the anchor watcher is `kampodine-anchor`
+- Service/container/image names: `esellar-api` → `kampodine-api`,
+  `esellar-blue`/`esellar-green` → `kampodine-blue`/`kampodine-green`,
+  golden image `esellar-alpine*` → `kampodine-alpine*`
+- `OCI_COMPARTMENT` is now REQUIRED (no default — compartments are
+  account-specific); `OCI_PROFILE` defaults to `default` (the OCI CLI's
+  own default profile) instead of a named profile
+- Existing guests keep booting, but flips against guests provisioned by
+  older releases need their watcher/paths updated (or re-run
+  `vm-prepare` on a fresh host) since the anchor protocol path changed
+
 ## 0.3.0 — 2026-10-07
 
 Full-lifecycle orchestration with first-class help — the "mini vercel CLI"

@@ -12,8 +12,8 @@
 # Types are pinned to A | AAAA | CNAME. `add` merges into the existing RRSet
 # (round-robin records survive); `rm` filters it; both are idempotence-aware.
 #
-# Zone/compartment: OCI_PROFILE (default esellar-api), OCI_COMPARTMENT
-# (default esellar). Zone defaults to the compartment's ONLY zone; pass
+# Zone/compartment: OCI_PROFILE (default: "default"), OCI_COMPARTMENT (required)
+# (required). Zone defaults to the compartment's ONLY zone; pass
 # --zone <id-or-name> when several exist.
 #
 # Usage:
@@ -23,8 +23,8 @@
 #   (all: optional --zone <id-or-name>; --instance-principal for instance auth)
 set -euo pipefail
 
-PROFILE="${OCI_PROFILE:-esellar-api}"
-COMPARTMENT_NAME="${OCI_COMPARTMENT:-esellar}"
+PROFILE="${OCI_PROFILE:-default}"
+COMPARTMENT_NAME="${OCI_COMPARTMENT:-kampodine}"
 AUTH_ARGS=()
 
 say() { printf '\033[1;34m[dns]\033[0m %s\n' "$*"; }
@@ -37,13 +37,13 @@ usage() {
 
 Auth is the oci CLI's own — its config file (--profile) or instance
 principal. kampodine never accepts, stores, or logs credential material.
-Zone/compartment: OCI_PROFILE (default esellar-api), OCI_COMPARTMENT (default
-esellar). Types are pinned to A | AAAA | CNAME; ttl range 60..172800.
+Zone/compartment: OCI_PROFILE (default: "default"), OCI_COMPARTMENT (default
+kampodine). Types are pinned to A | AAAA | CNAME; ttl range 60..172800.
 
 Examples:
   kampodine dns records
-  kampodine dns records --zone esellar.example.com
-  kampodine dns add --name app --type A --value 203.0.113.10 --zone esellar.example.com
+  kampodine dns records --zone kampodine.example.com
+  kampodine dns add --name app --type A --value 203.0.113.10 --zone kampodine.example.com
   kampodine dns add --name www --type CNAME --value app.example.com --ttl 3600
   kampodine dns rm --name app --type A --value 203.0.113.10
 EOF
@@ -111,6 +111,8 @@ need_provider() {
     || die "oci CLI not found — brew install oci-cli (https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm), then: oci setup config"
   command -v jq >/dev/null 2>&1 \
     || die "jq not found — brew install jq (dns.sh uses it for RRSet surgery)"
+  [[ -n "${OCI_COMPARTMENT:-}" ]] \
+    || die "set OCI_COMPARTMENT=<compartment name or ocid> — no default: compartments are account-specific"
 }
 
 compartment_ocid() {

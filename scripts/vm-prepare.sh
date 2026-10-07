@@ -12,21 +12,21 @@
 #   2. apk repositories: ensure the v3.22 community repo (podman lives there)
 #   3. podman stack: podman podman-docker crun catatonit netavark
 #      aardvark-dns fuse-overlayfs
-#   4. /etc/esellar/ (kampodine deploy writes /etc/esellar/env here, 0600 root)
+#   4. /etc/kampodine/ (kampodine deploy writes /etc/kampodine/env here, 0600 root)
 #   5. /etc/containers/registries.conf (insecure 127.0.0.1:5000; search docker.io)
 #   6. sysctl net.ipv4.ip_unprivileged_port_start=80 (persisted + applied live)
-#   7. OpenRC services /etc/init.d/esellar-api + /etc/init.d/kamal-proxy
+#   7. OpenRC services /etc/init.d/kampodine-api + /etc/init.d/kamal-proxy
 #      (supervise-daemon around plain `podman run`), rc-update'd into the
 #      default runlevel — that IS boot survival (no quadlets, no systemctl)
-#   8. esellar-anchor: the blue-green reserved-ip flip's GUEST half — a
-#      busybox watcher (no container) that polls /etc/esellar/anchor.conf and
+#   8. kampodine-anchor: the blue-green reserved-ip flip's GUEST half — a
+#      busybox watcher (no container) that polls /etc/kampodine/anchor.conf and
 #      `ip addr add`s the anchor address at flip time. Started+enabled on every
 #      VM, inert without the conf (flip tooling writes it over ssh).
 #   9. kamal-proxy image pulled + service UP — the first deploy execs into it
 #      to issue the fresh ACME certificate
 #
-# The esellar-api container is NOT started here: neither its image (pulled by
-# the first deploy over the registry tunnel) nor /etc/esellar/env (written by
+# The kampodine-api container is NOT started here: neither its image (pulled by
+# the first deploy over the registry tunnel) nor /etc/kampodine/env (written by
 # kampodine deploy) exists yet on a fresh VM.
 #
 # Idempotent: safe to re-run. apk add is a no-op when satisfied; managed files
@@ -36,12 +36,12 @@
 #
 #   kampodine vm-prepare --host root@<new-ip>
 #   ... --pull-images     # + pre-pull the app image over the registry tunnel
-#   ... --ssh-key <path>  # ssh identity (default: agent / ESPELLAR_SSH_KEY)
+#   ... --ssh-key <path>  # ssh identity (default: agent / KAMPODINE_SSH_KEY)
 set -euo pipefail
 
 HOST=""
 DO_PULL=0
-SSH_KEY="${ESPELLAR_SSH_KEY:-}"
+SSH_KEY="${KAMPODINE_SSH_KEY:-}"
 
 say() { printf '\033[1;32m[vm-prepare]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[vm-prepare] FAIL:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -56,7 +56,7 @@ EOF
   cat <<'EOF'
 
 Host/key resolution: --host | (no env default — explicit flag);
---ssh-key | ESPELLAR_SSH_KEY | ssh-agent / ~/.ssh/config.
+--ssh-key | KAMPODINE_SSH_KEY | ssh-agent / ~/.ssh/config.
 EOF
   exit 0
 }
@@ -87,7 +87,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 # --- managed file payloads (built Mac-side, scp'd) ----------------------------
-TMPDIR_LOCAL="$(mktemp -d /tmp/esellar-vm-prepare.XXXXXX)"
+TMPDIR_LOCAL="$(mktemp -d /tmp/kampodine-vm-prepare.XXXXXX)"
 trap 'rm -rf "$TMPDIR_LOCAL"' EXIT
 
 cat > "$TMPDIR_LOCAL/registries.conf" <<'REGISTRIES'
@@ -102,17 +102,17 @@ location = "127.0.0.1:5000"
 insecure = true
 REGISTRIES
 
-cat > "$TMPDIR_LOCAL/60-esellar.conf" <<'SYSCTL'
+cat > "$TMPDIR_LOCAL/60-kampodine.conf" <<'SYSCTL'
 # Managed by packages/kampodine/scripts/vm-prepare.sh — do not hand-edit.
 # OpenRC contract: let unprivileged/container paths bind port 80
 # (kamal-proxy publishes 80+443; belt-and-braces for a future rootless move).
 net.ipv4.ip_unprivileged_port_start=80
 SYSCTL
 
-cat > "$TMPDIR_LOCAL/esellar-api" <<'INITD_API'
+cat > "$TMPDIR_LOCAL/kampodine-api" <<'INITD_API'
 #!/sbin/openrc-run
 # Managed by packages/kampodine/scripts/vm-prepare.sh — do not hand-edit.
-# KEEP IN SYNC with ansible/roles/container-service/templates/esellar-api.initd.j2
+# KEEP IN SYNC with the golden image's container-service init template
 # (rendered with role defaults): vm-prepare bootstraps a fresh VM BEFORE the
 # first ansible converge; ansible owns the file afterwards (drift repair).
 #
@@ -122,7 +122,7 @@ cat > "$TMPDIR_LOCAL/esellar-api" <<'INITD_API'
 # dies, the WHOLE run restarts against the local :latest (no pull inside the
 # run — restarts are offline-safe; the registry tunnel is down between deploys).
 #
-# Env: /etc/esellar/env (0600 root, written by kampodine deploy per deploy) is
+# Env: /etc/kampodine/env (0600 root, written by kampodine deploy per deploy) is
 # the single SECRETS source (podman --env-file reads KEY=VALUE lines directly).
 # The five CLEAR vars (NODE_ENV, PORT, LIBSQL_TENANT_DIR, LIBSQL_API_MOUNT,
 # STATIC_SPA_MOUNT) are owned HERE via -e — deploy filters them out of the env
@@ -130,16 +130,16 @@ cat > "$TMPDIR_LOCAL/esellar-api" <<'INITD_API'
 # (tenant sqlite files) — without the bind mount, tenant data would be
 # container-ephemeral and lost on every restart.
 
-name="esellar-api"
-description="esellar API + SPA container (127.0.0.1:5000/esellar-api:latest on 8080)"
+name="kampodine-api"
+description="kampodine API + SPA container (127.0.0.1:5000/kampodine-api:latest on 8080)"
 
 supervisor=supervise-daemon
 command="/usr/bin/podman"
-command_args="run --rm --name esellar-api --network kamal -p 8080:8080"
+command_args="run --rm --name kampodine-api --network kamal -p 8080:8080"
 command_args="$command_args -v /data/tenants:/data/tenants"
 command_args="$command_args -e NODE_ENV=production -e PORT=8080"
 command_args="$command_args -e LIBSQL_TENANT_DIR=/data/tenants -e LIBSQL_API_MOUNT=1 -e STATIC_SPA_MOUNT=1"
-command_args="$command_args --env-file /etc/esellar/env 127.0.0.1:5000/esellar-api:latest"
+command_args="$command_args --env-file /etc/kampodine/env 127.0.0.1:5000/kampodine-api:latest"
 
 # Respawn forever (blue's restart=always precedent): a crash loop self-heals at
 # the next deploy's restart; the 10s delay bounds log noise.
@@ -147,26 +147,26 @@ respawn_delay=10
 respawn_max=0
 
 # podman run's OWN stderr (missing image, name conflicts, netavark failures);
-# container stdout/stderr go to `podman logs esellar-api`.
-supervise_daemon_args="--stderr /var/log/esellar-api-service.log"
+# container stdout/stderr go to `podman logs kampodine-api`.
+supervise_daemon_args="--stderr /var/log/kampodine-service.log"
 
 depend() {
 	need net
-	after esellar-datamount
+	after kampodine-datamount
 }
 
 start_pre() {
 	# SIGKILLed runs leave the container name holding port 8080 (--rm only
 	# cleans CLEAN exits) — sweep any leftover before the supervised run.
-	podman container exists esellar-api 2>/dev/null && podman rm -f esellar-api >/dev/null 2>&1
+	podman container exists kampodine-api 2>/dev/null && podman rm -f kampodine-api >/dev/null 2>&1
 	return 0
 }
 
 stop_post() {
 	# supervise-daemon killed the podman client; make sure the container goes
 	# down too (TERM -> graceful shutdown, then a tolerant sweep).
-	podman stop --time 10 esellar-api >/dev/null 2>&1 || true
-	podman rm -f --time 0 esellar-api >/dev/null 2>&1 || true
+	podman stop --time 10 kampodine-api >/dev/null 2>&1 || true
+	podman rm -f --time 0 kampodine-api >/dev/null 2>&1 || true
 }
 INITD_API
 
@@ -174,7 +174,7 @@ cat > "$TMPDIR_LOCAL/kamal-proxy" <<'INITD_PROXY'
 #!/sbin/openrc-run
 # Managed by packages/kampodine/scripts/vm-prepare.sh — do not hand-edit.
 # KEEP IN SYNC with ansible/roles/container-service/templates/kamal-proxy.initd.j2
-# (see the esellar-api header for the vm-prepare/ansible split).
+# (see the kampodine-api header for the vm-prepare/ansible split).
 #
 # TLS edge (kamal-proxy, Let's Encrypt HTTP-01 on :80). Publishes 80+443; the
 # LE certs + host->target registrations persist in the kamal-proxy-config named
@@ -182,7 +182,7 @@ cat > "$TMPDIR_LOCAL/kamal-proxy" <<'INITD_PROXY'
 # the first deploy survives container recreation AND reboots. Start-fresh:
 # nothing is carried from the retired blue VM. Target registration happens at
 # deploy time (kampodine deploy: podman exec kamal-proxy kamal-proxy deploy
-# esellar-api --host=$PROXY_HOST --target=esellar-api:8080 --tls
+# kampodine-api --host=$PROXY_HOST --target=kampodine-api:8080 --tls
 # --health-check-path=/api/auth/ok).
 
 name="kamal-proxy"
@@ -212,19 +212,19 @@ stop_post() {
 }
 INITD_PROXY
 
-cat > "$TMPDIR_LOCAL/esellar-anchor.sh" <<'ANCHOR_WATCHER'
+cat > "$TMPDIR_LOCAL/kampodine-anchor.sh" <<'ANCHOR_WATCHER'
 #!/bin/sh
-# KEEP IN SYNC with ansible/roles/container-service/files/esellar-anchor.sh
+# KEEP IN SYNC with ansible/roles/container-service/files/kampodine-anchor.sh
 # (vm-prepare rendered-content convention: vm-prepare bootstraps a fresh VM
 # BEFORE the first ansible converge; ansible owns the file afterwards).
 #
-# esellar-anchor.sh — guest half of the blue-green reserved-ip flip.
+# kampodine-anchor.sh — guest half of the blue-green reserved-ip flip.
 #
 # OCI assigns the reserved PUBLIC ip to a SECONDARY private ip ("the anchor")
 # on the instance VNIC, but this image has NO oracle-cloud-agent: nothing
 # configures that private ip inside the guest, so packets to the reserved ip
 # die until the address exists on the interface. `kampodine bluegreen flip` writes
-# /etc/esellar/anchor.conf over ssh at flip time; this watcher polls it and
+# /etc/kampodine/anchor.conf over ssh at flip time; this watcher polls it and
 # runs `ip addr add` within one interval. The unit is enabled+started on every
 # VM by default and is INERT without the conf — a VM that never flips never
 # touches its addresses.
@@ -236,13 +236,13 @@ cat > "$TMPDIR_LOCAL/esellar-anchor.sh" <<'ANCHOR_WATCHER'
 # ADD-ONLY BY DESIGN: this script NEVER removes or flushes addresses (rollback
 # cleanup is the flip tool's explicit ssh job). Idempotent: a present address
 # is a no-op. Only state TRANSITIONS are logged (bounded log noise), to
-# stdout — supervise-daemon tees it to /var/log/esellar-anchor.log.
+# stdout — supervise-daemon tees it to /var/log/kampodine-anchor.log.
 
-CONF="/etc/esellar/anchor.conf"
-INTERVAL="${ESPELLAR_ANCHOR_INTERVAL:-5}"
+CONF="/etc/kampodine/anchor.conf"
+INTERVAL="${KAMPODINE_ANCHOR_INTERVAL:-5}"
 STATE="boot" # last logged transition (boot | idle | added | error)
 
-log() { printf '%s esellar-anchor: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"; }
+log() { printf '%s kampodine-anchor: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"; }
 
 # supervise-daemon SIGTERMs on stop — die cleanly with the current tick.
 trap 'exit 0' TERM INT
@@ -283,33 +283,33 @@ while :; do
 done
 ANCHOR_WATCHER
 
-cat > "$TMPDIR_LOCAL/esellar-anchor" <<'INITD_ANCHOR'
+cat > "$TMPDIR_LOCAL/kampodine-anchor" <<'INITD_ANCHOR'
 #!/sbin/openrc-run
 # Managed by packages/kampodine/scripts/vm-prepare.sh — do not hand-edit.
-# KEEP IN SYNC with ansible/roles/container-service/templates/esellar-anchor.initd.j2
-# (rendered with role defaults — see the esellar-api header for the
+# KEEP IN SYNC with ansible/roles/container-service/templates/kampodine-anchor.initd.j2
+# (rendered with role defaults — see the kampodine-api header for the
 # vm-prepare/ansible split).
 #
 # Guest half of the blue-green reserved-ip flip: supervise-daemon runs the
-# esellar-anchor.sh watcher, which polls /etc/esellar/anchor.conf (written by
+# kampodine-anchor.sh watcher, which polls /etc/kampodine/anchor.conf (written by
 # `kampodine bluegreen flip` over ssh at flip time) and `ip addr add`s the
 # anchor address when it appears. Started+enabled on EVERY vm by default and
 # INERT without the conf: a VM that never flips never touches its addresses —
-# unlike the container units, there is no esellar_start_containers gate.
-# Transitions land in /var/log/esellar-anchor.log.
+# unlike the container units, there is no kampodine_start_containers gate.
+# Transitions land in /var/log/kampodine-anchor.log.
 
-name="esellar-anchor"
+name="kampodine-anchor"
 description="Blue-green reserved-ip anchor address watcher (guest half of the flip)"
 
 supervisor=supervise-daemon
-command="/usr/local/sbin/esellar-anchor.sh"
+command="/usr/local/sbin/kampodine-anchor.sh"
 
 # Respawn forever: the watcher itself never exits (trap TERM/INT -> exit 0 on
 # stop), so a respawn means the script died abnormally — retry gently.
 respawn_delay=5
 respawn_max=0
 
-supervise_daemon_args="--stdout /var/log/esellar-anchor.log --stderr /var/log/esellar-anchor.log"
+supervise_daemon_args="--stdout /var/log/kampodine-anchor.log --stderr /var/log/kampodine-anchor.log"
 
 depend() {
 	need net
@@ -366,7 +366,7 @@ say "sshd hardening: ensure drop-in + Include + restart (golden image predates t
 vm 'grep -q "^Include /etc/ssh/sshd_config.d/\*.conf" /etc/ssh/sshd_config || sed -i "1i Include /etc/ssh/sshd_config.d/*.conf" /etc/ssh/sshd_config' \
   || die "could not ensure the sshd_config Include line"
 vm 'mkdir -p /etc/ssh/sshd_config.d && chmod 700 /etc/ssh/sshd_config.d'
-scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/sshd-hardening.conf" "$HOST:/etc/ssh/sshd_config.d/99-esellar-hardening.conf"
+scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/sshd-hardening.conf" "$HOST:/etc/ssh/sshd_config.d/99-kampodine-hardening.conf"
 vm 'rc-service sshd restart' || die "sshd restart failed after hardening ensure"
 
 say "gate: sshd hardening effective"
@@ -404,50 +404,50 @@ PODSTACK_GATE
 vm 'rc-update show boot | grep -q cgroups || rc-update add cgroups boot' || die "rc-update cgroups failed"
 vm 'rc-service cgroups status >/dev/null 2>&1 || rc-service cgroups start' || die "cgroups start failed"
 
-# --- 3. /etc/esellar + managed config files ------------------------------------
-say "creating /etc/esellar (env file lands here via kampodine deploy, 0600 root)…"
-vm 'mkdir -p /etc/esellar && chmod 700 /etc/esellar'
+# --- 3. /etc/kampodine + managed config files ------------------------------------
+say "creating /etc/kampodine (env file lands here via kampodine deploy, 0600 root)…"
+vm 'mkdir -p /etc/kampodine && chmod 700 /etc/kampodine'
 
 say "writing /etc/containers/registries.conf (insecure 127.0.0.1:5000; search docker.io)…"
 vm 'mkdir -p /etc/containers'
 scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/registries.conf" "$HOST:/etc/containers/registries.conf"
 
-say "writing /etc/sysctl.d/60-esellar.conf + applying live…"
-scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/60-esellar.conf" "$HOST:/etc/sysctl.d/60-esellar.conf"
+say "writing /etc/sysctl.d/60-kampodine.conf + applying live…"
+scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/60-kampodine.conf" "$HOST:/etc/sysctl.d/60-kampodine.conf"
 vm_sh <<'SYSCTL_APPLY' || die "sysctl ensure/apply failed"
 rc-update show boot | grep -Eq '^[[:space:]]*sysctl[[:space:]]*\|' || rc-update add sysctl boot
 sysctl -w net.ipv4.ip_unprivileged_port_start=80 > /dev/null
 SYSCTL_APPLY
 
 # --- 4. OpenRC services (canonical: ansible container-service templates) --------
-say "ensuring the 'kamal' podman network (deploy's proxy re-point resolves esellar-api:8080 by network DNS)…"
+say "ensuring the 'kamal' podman network (deploy's proxy re-point resolves kampodine-api:8080 by network DNS)…"
 # shellcheck disable=SC2016
 vm 'podman network exists kamal 2>/dev/null || podman network create kamal' \
   || die "podman network create kamal failed"
-say "installing OpenRC services esellar-api + kamal-proxy (supervise-daemon around podman run)…"
-scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/esellar-api" "$HOST:/etc/init.d/esellar-api"
+say "installing OpenRC services kampodine-api + kamal-proxy (supervise-daemon around podman run)…"
+scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/kampodine-api" "$HOST:/etc/init.d/kampodine-api"
 scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/kamal-proxy" "$HOST:/etc/init.d/kamal-proxy"
-vm 'chmod 755 /etc/init.d/esellar-api /etc/init.d/kamal-proxy'
+vm 'chmod 755 /etc/init.d/kampodine-api /etc/init.d/kamal-proxy'
 
-# --- 4b. esellar-anchor (blue-green flip guest half — watcher, no container) ----
+# --- 4b. kampodine-anchor (blue-green flip guest half — watcher, no container) ----
 # Ships on EVERY vm: started + enabled now, INERT until a flip writes
-# /etc/esellar/anchor.conf over ssh (ansible container-service owns both files
+# /etc/kampodine/anchor.conf over ssh (ansible container-service owns both files
 # afterwards — drift repair keeps them in sync).
-say "installing the esellar-anchor watcher service (blue-green flip guest half)…"
+say "installing the kampodine-anchor watcher service (blue-green flip guest half)…"
 # /usr/local/sbin does NOT exist on the golden image (fresh Alpine ships no
 # /usr/local hierarchy; the alpine-base role creates it — vm-prepare runs
 # BEFORE any ansible)
 vm 'mkdir -p /usr/local/sbin' || die "mkdir /usr/local/sbin failed"
-scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/esellar-anchor.sh" "$HOST:/usr/local/sbin/esellar-anchor.sh"
-scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/esellar-anchor" "$HOST:/etc/init.d/esellar-anchor"
-vm 'chmod 755 /usr/local/sbin/esellar-anchor.sh /etc/init.d/esellar-anchor' || die "chmod esellar-anchor files failed"
-vm 'sh -n /usr/local/sbin/esellar-anchor.sh' || die "esellar-anchor.sh does not parse (busybox sh)"
-vm 'sh -n /etc/init.d/esellar-anchor' || die "/etc/init.d/esellar-anchor does not parse"
-vm 'rc-update show default | grep -qE "^[[:space:]]*esellar-anchor[[:space:]]*\\|" || rc-update add esellar-anchor default' \
-  || die "rc-update add esellar-anchor default failed"
-vm 'rc-service esellar-anchor start' || die "rc-service esellar-anchor start failed"
+scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/kampodine-anchor.sh" "$HOST:/usr/local/sbin/kampodine-anchor.sh"
+scp -q "${SSH_ARGS[@]}" "$TMPDIR_LOCAL/kampodine-anchor" "$HOST:/etc/init.d/kampodine-anchor"
+vm 'chmod 755 /usr/local/sbin/kampodine-anchor.sh /etc/init.d/kampodine-anchor' || die "chmod kampodine-anchor files failed"
+vm 'sh -n /usr/local/sbin/kampodine-anchor.sh' || die "kampodine-anchor.sh does not parse (busybox sh)"
+vm 'sh -n /etc/init.d/kampodine-anchor' || die "/etc/init.d/kampodine-anchor does not parse"
+vm 'rc-update show default | grep -qE "^[[:space:]]*kampodine-anchor[[:space:]]*\\|" || rc-update add kampodine-anchor default' \
+  || die "rc-update add kampodine-anchor default failed"
+vm 'rc-service kampodine-anchor start' || die "rc-service kampodine-anchor start failed"
 
-for SVC in esellar-api kamal-proxy; do
+for SVC in kampodine-api kamal-proxy; do
   vm "rc-update show default | grep -qE '^[[:space:]]*${SVC}[[:space:]]*\\|' || rc-update add ${SVC} default" \
     || die "rc-update add $SVC default failed"
 done
@@ -456,7 +456,7 @@ done
 # re-runs after a deploy must not bounce production.
 # shellcheck disable=SC2016
 vm_sh <<'UNIT_DRIFT' || true
-for SVC in esellar-api kamal-proxy esellar-anchor; do
+for SVC in kampodine-api kamal-proxy kampodine-anchor; do
   if rc-service "$SVC" status > /dev/null 2>&1; then
     echo "RUNNING: $SVC (unit file was overwritten — rc-service $SVC restart to apply, on your call)"
   fi
@@ -483,26 +483,26 @@ if [[ $DO_PULL -eq 1 ]]; then
   # installs it later; vm-prepare runs BEFORE any ansible)
   vm 'busybox wget -q -O /dev/null http://127.0.0.1:5000/v2/' || {
     pkill -f "ssh.*-R 5000" 2>/dev/null || true; sleep 1
-    nohup ssh -R 5000:127.0.0.1:5000 -N -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes "$HOST" >/tmp/esellar-tunnel.log 2>&1 &
+    nohup ssh -R 5000:127.0.0.1:5000 -N -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes "$HOST" >/tmp/kampodine-tunnel.log 2>&1 &
     sleep 3
   }
-  vm 'busybox wget -q -O /dev/null http://127.0.0.1:5000/v2/' || die "registry tunnel did not come up (/tmp/esellar-tunnel.log)"
-  vm 'podman pull --tls-verify=false 127.0.0.1:5000/esellar-api:latest' || die "app image pull failed"
+  vm 'busybox wget -q -O /dev/null http://127.0.0.1:5000/v2/' || die "registry tunnel did not come up (/tmp/kampodine-tunnel.log)"
+  vm 'podman pull --tls-verify=false 127.0.0.1:5000/kampodine-api:latest' || die "app image pull failed"
 else
   say "skipping app-image pre-pull (pass --pull-images, or let the first deploy pull)"
 fi
 
-# --- 7. converge esellar-api ONLY if a previous deploy left image + env ---------
+# --- 7. converge kampodine-api ONLY if a previous deploy left image + env ---------
 # On a truly fresh VM neither exists — the FIRST DEPLOY provides both and
 # starts the service. Re-runs of this script after a deploy heal drift.
-say "esellar-api start check (needs image + /etc/esellar/env — first deploy provides both)…"
+say "kampodine-api start check (needs image + /etc/kampodine/env — first deploy provides both)…"
 # shellcheck disable=SC2016
-vm_sh <<'API_CONVERGE' || die "esellar-api start failed (image + env present — investigate: podman logs esellar-api)"
-if [ -f /etc/esellar/env ] && podman image exists 127.0.0.1:5000/esellar-api:latest; then
-  rc-service esellar-api start
-  echo "esellar-api started (image + env present)"
+vm_sh <<'API_CONVERGE' || die "kampodine-api start failed (image + env present — investigate: podman logs kampodine-api)"
+if [ -f /etc/kampodine/env ] && podman image exists 127.0.0.1:5000/kampodine-api:latest; then
+  rc-service kampodine-api start
+  echo "kampodine-api started (image + env present)"
 else
-  echo "esellar-api deferred: no image and/or /etc/esellar/env yet (normal on a fresh VM — first deploy handles it)"
+  echo "kampodine-api deferred: no image and/or /etc/kampodine/env yet (normal on a fresh VM — first deploy handles it)"
 fi
 API_CONVERGE
 
@@ -522,16 +522,16 @@ vm 'grep -q "127.0.0.1:5000" /etc/containers/registries.conf && grep -q "insecur
   || die "registries.conf incomplete (127.0.0.1:5000 insecure + docker.io search)"
 
 say "gate: services enabled in the default runlevel"
-vm 'rc-update show default | grep -qE "^[[:space:]]*esellar-api[[:space:]]*\\|"' || die "esellar-api not in the default runlevel"
+vm 'rc-update show default | grep -qE "^[[:space:]]*kampodine-api[[:space:]]*\\|"' || die "kampodine-api not in the default runlevel"
 vm 'rc-update show default | grep -qE "^[[:space:]]*kamal-proxy[[:space:]]*\\|"' || die "kamal-proxy not in the default runlevel"
 vm 'rc-service kamal-proxy status >/dev/null' || die "kamal-proxy service not started"
 
-say "gate: esellar-anchor watcher running + INERT (no anchor conf on a fresh VM)"
-vm 'rc-update show default | grep -qE "^[[:space:]]*esellar-anchor[[:space:]]*\\|"' || die "esellar-anchor not in the default runlevel"
-vm 'rc-service esellar-anchor status >/dev/null' || die "esellar-anchor service not started"
-vm '! test -e /etc/esellar/anchor.conf' || die "/etc/esellar/anchor.conf already exists on a fresh VM (wrong machine?)"
-vm 'grep -q "no anchor conf" /var/log/esellar-anchor.log' \
-  || die "esellar-anchor is started but never logged its idle transition (watcher loop not running?)"
+say "gate: kampodine-anchor watcher running + INERT (no anchor conf on a fresh VM)"
+vm 'rc-update show default | grep -qE "^[[:space:]]*kampodine-anchor[[:space:]]*\\|"' || die "kampodine-anchor not in the default runlevel"
+vm 'rc-service kampodine-anchor status >/dev/null' || die "kampodine-anchor service not started"
+vm '! test -e /etc/kampodine/anchor.conf' || die "/etc/kampodine/anchor.conf already exists on a fresh VM (wrong machine?)"
+vm 'grep -q "no anchor conf" /var/log/kampodine-anchor.log' \
+  || die "kampodine-anchor is started but never logged its idle transition (watcher loop not running?)"
 
 # --- summary ---------------------------------------------------------------------
 IP="${HOST#*@}"

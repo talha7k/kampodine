@@ -16,7 +16,7 @@ const vmPrepare = readFileSync(
 
 describe("vm-prepare sshd hardening (ensure before gate)", () => {
   test("ships the hardening drop-in", () => {
-    expect(vmPrepare).toContain("99-esellar-hardening.conf");
+    expect(vmPrepare).toContain("99-kampodine-hardening.conf");
   });
 
   test("ensures the Include line, restarts sshd, THEN gates — in that order", () => {
@@ -24,7 +24,7 @@ describe("vm-prepare sshd hardening (ensure before gate)", () => {
     const at = (needle: string) =>
       lines.findIndex((l) => l.includes(needle) && !l.trim().startsWith("#"));
     const ensure = at("sshd_config.d/*.conf");
-    const install = at("99-esellar-hardening.conf");
+    const install = at("99-kampodine-hardening.conf");
     const restart = lines.findIndex(
       (l) => /rc-service sshd restart/.test(l) && !l.trim().startsWith("#"),
     );

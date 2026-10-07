@@ -39,7 +39,7 @@ DNS
   dns            OCI DNS records (oci config-file / instance-principal auth ONLY): records | add | rm
 
 ENV
-  env            remote app env file (/etc/esellar/env, 0600): list | push | pull — values NEVER printed, fingerprints only
+  env            remote app env file (/etc/kampodine/env, 0600): list | push | pull — values NEVER printed, fingerprints only
 
 Every command supports --help with usage + examples. All further args pass through to the underlying script.
 `;

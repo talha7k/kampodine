@@ -1,6 +1,6 @@
 {
   "name": "kampodine",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Kamal-style deploys for Alpine + Podman hosts, built on kamal-proxy",
   "license": "AGPL-3.0",
   "type": "module",
@@ -21,6 +21,8 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "dotenv": "^8.2.0",
+    "node-fetch": "^3.3.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.10"
   },

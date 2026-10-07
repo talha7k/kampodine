@@ -14,26 +14,26 @@
 # Auth: ~/.oci/config (brew install oci-cli; oci setup config) by default, or
 # --from-pass to source API credentials from the local pass store — the key
 # NEVER enters this repo, the image, or any log (values only go into env vars).
-# Every oci call pins --profile $PROFILE (OCI_PROFILE, default esellar-api) —
-# the CLI's DEFAULT profile is NOT the esellar tenancy.
+# Every oci call pins --profile $PROFILE (OCI_PROFILE, default "default") —
+# the CLI's DEFAULT profile is NOT the kampodine tenancy.
 # Placeholder pass paths (create yours to match):
-#   esellar/oci/user         user OCID
-#   esellar/oci/tenancy      tenancy OCID
-#   esellar/oci/fingerprint  API key fingerprint
-#   esellar/oci/api-key      PEM private key
+#   kampodine/oci/user         user OCID
+#   kampodine/oci/tenancy      tenancy OCID
+#   kampodine/oci/fingerprint  API key fingerprint
+#   kampodine/oci/api-key      PEM private key
 #
 # Usage:
 #   kampodine image-import                       # defaults below
 #   kampodine image-import --from-pass
-#   kampodine image-import --image build/esellar-alpine-3.22.6-aarch64.qcow2
+#   kampodine image-import --image build/kampodine-alpine-3.22.6-aarch64.qcow2
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 IMAGE=""
-BUCKET="${OCI_IMPORT_BUCKET:-esellar-image-import}"
-NAME_PREFIX="${OCI_IMPORT_NAME:-esellar-alpine}"
-COMPARTMENT_NAME="${OCI_COMPARTMENT:-esellar}"
-PROFILE="${OCI_PROFILE:-esellar-api}"
+BUCKET="${OCI_IMPORT_BUCKET:-kampodine-image-import}"
+NAME_PREFIX="${OCI_IMPORT_NAME:-kampodine-alpine}"
+COMPARTMENT_NAME="${OCI_COMPARTMENT:-kampodine}"
+PROFILE="${OCI_PROFILE:-default}"
 FROM_PASS=0
 KEEP_OBJECT=0
 
@@ -65,18 +65,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v oci >/dev/null 2>&1 || die "oci CLI not found — brew install oci-cli, then: oci setup config (infra/oci/README.md § CLI setup)"
+[[ -n "${OCI_COMPARTMENT:-}" ]] || die "set OCI_COMPARTMENT=<compartment name or ocid> — no default: compartments are account-specific"
 command -v pass >/dev/null 2>&1 || true
 
 if [[ $FROM_PASS -eq 1 ]]; then
   command -v pass >/dev/null 2>&1 || die "pass not installed (brew install pass)"
   say "sourcing OCI API credentials from pass (values never printed/logged)…"
   for entry in user tenancy fingerprint api-key; do
-    pass show "esellar/oci/$entry" >/dev/null 2>&1 || die "missing pass entry esellar/oci/$entry"
+    pass show "kampodine/oci/$entry" >/dev/null 2>&1 || die "missing pass entry kampodine/oci/$entry"
   done
-  OCI_CLI_USER="$(pass show esellar/oci/user)"
-  OCI_CLI_TENANCY="$(pass show esellar/oci/tenancy)"
-  OCI_CLI_FINGERPRINT="$(pass show esellar/oci/fingerprint)"
-  OCI_CLI_KEY_CONTENT="$(pass show esellar/oci/api-key)"
+  OCI_CLI_USER="$(pass show kampodine/oci/user)"
+  OCI_CLI_TENANCY="$(pass show kampodine/oci/tenancy)"
+  OCI_CLI_FINGERPRINT="$(pass show kampodine/oci/fingerprint)"
+  OCI_CLI_KEY_CONTENT="$(pass show kampodine/oci/api-key)"
   export OCI_CLI_USER OCI_CLI_TENANCY OCI_CLI_FINGERPRINT OCI_CLI_KEY_CONTENT
 fi
 
@@ -84,7 +85,7 @@ fi
 if [[ -z "$IMAGE" ]]; then
   # Constrained glob (our own build output names) — ls is fine here.
   # shellcheck disable=SC2012
-  IMAGE="$(ls -t "$REPO_ROOT/infra/alpine-host/build"/esellar-alpine-*.qcow2 2>/dev/null | head -1 || true)"
+  IMAGE="$(ls -t "$REPO_ROOT/infra/alpine-host/build"/kampodine-alpine-*.qcow2 2>/dev/null | head -1 || true)"
   [[ -n "$IMAGE" ]] || die "no qcow2 under infra/alpine-host/build/ — run: (cd infra/alpine-host && packer build .)"
 fi
 [[ -f "$IMAGE" ]] || die "image not found: $IMAGE"
@@ -96,7 +97,7 @@ NAMESPACE="$(oci os ns get --profile "$PROFILE" --query data --raw-output)"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OBJECT_NAME="${NAME_PREFIX}-${STAMP}.qcow2"
-IMAGE_NAME="${NAME_PREFIX}-$(basename "$IMAGE" .qcow2 | sed 's/^esellar-alpine-//')-${STAMP}"
+IMAGE_NAME="${NAME_PREFIX}-$(basename "$IMAGE" .qcow2 | sed 's/^kampodine-alpine-//')-${STAMP}"
 
 say "uploading $(basename "$IMAGE") -> os://$BUCKET/$OBJECT_NAME"
 oci os object put -bn "$BUCKET" --profile "$PROFILE" --file "$IMAGE" --name "$OBJECT_NAME" --force \
@@ -162,7 +163,7 @@ say "  display   : $IMAGE_NAME"
 say "  firmware  : $IMPORT_FIRMWARE"
 say "next:"
 if [[ "$IMPORT_FIRMWARE" == "UEFI_64" ]]; then
-  say "  A1-ready. kampodine bluegreen provision <blue|green> picks this image (newest esellar-alpine*)."
+  say "  A1-ready. kampodine bluegreen provision <blue|green> picks this image (newest kampodine-alpine*)."
 else
   say "  A1 launch will REJECT this image (firmware $IMPORT_FIRMWARE) — see the WARN above."
 fi
