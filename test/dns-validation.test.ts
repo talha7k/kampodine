@@ -62,7 +62,7 @@ function runDns(args: string[], pathOverride?: string): Result {
     cwd: pkgDir,
     encoding: "utf8",
     timeout: 20_000,
-    env: { ...process.env, PATH: pathOverride ?? `${stubDir}:/usr/bin:/bin` },
+    env: { ...process.env, OCI_COMPARTMENT: "test-compartment", PATH: pathOverride ?? `${stubDir}:/usr/bin:/bin` },
   });
   return {
     status: result.status,

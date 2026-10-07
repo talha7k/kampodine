@@ -74,34 +74,34 @@ describe("anchor watcher guest service (blue-green flip guest half)", () => {
 
   test("watcher polls the anchor conf and anchors the reserved ip", () => {
     expect(watcherScript).toContain("ANCHOR_ADDR");
-    expect(watcherScript).toContain("/etc/esellar/anchor.conf");
+    expect(watcherScript).toContain("/etc/kampodine/anchor.conf");
   });
 
   test("vm-prepare ships both files with KEEP IN SYNC pointers to the ansible role", () => {
-    expect(vmPrepare).toContain("esellar-anchor.sh");
-    expect(vmPrepare).toContain("/etc/init.d/esellar-anchor");
+    expect(vmPrepare).toContain("kampodine-anchor.sh");
+    expect(vmPrepare).toContain("/etc/init.d/kampodine-anchor");
     // rendered-content convention: vm-prepare bootstraps, ansible owns after
     expect(vmPrepare).toMatch(
-      /KEEP IN SYNC with ansible\/roles\/container-service\/(templates\/esellar-anchor\.initd\.j2|files\/esellar-anchor\.sh)/,
+      /KEEP IN SYNC with ansible\/roles\/container-service\/(templates\/kampodine-anchor\.initd\.j2|files\/kampodine-anchor\.sh)/,
     );
     // the watcher lands in /usr/local/sbin — a path the GOLDEN IMAGE does
     // not have (fresh Alpine ships no /usr/local hierarchy; the alpine-base
     // role creates it later, but vm-prepare runs BEFORE any ansible) — the
     // install must mkdir -p first
-    const watcherIdx = vmPrepare.indexOf("esellar-anchor.sh\" \"$HOST:/usr/local/sbin");
+    const watcherIdx = vmPrepare.indexOf("kampodine-anchor.sh\" \"$HOST:/usr/local/sbin");
     expect(watcherIdx).toBeGreaterThanOrEqual(0);
-    const sectionStart = vmPrepare.indexOf("esellar-anchor watcher service", 0);
+    const sectionStart = vmPrepare.indexOf("kampodine-anchor watcher service", 0);
     expect(sectionStart).toBeGreaterThan(0);
     const section = vmPrepare.slice(sectionStart, watcherIdx);
     expect(section).toContain("mkdir -p /usr/local/sbin");
     // shipped in the default runlevel, started now (inert without anchor.conf)
-    expect(vmPrepare).toMatch(/rc-update add esellar-anchor default/);
-    expect(vmPrepare).toMatch(/rc-service esellar-anchor start/);
+    expect(vmPrepare).toMatch(/rc-update add kampodine-anchor default/);
+    expect(vmPrepare).toMatch(/rc-service kampodine-anchor start/);
     // fail-closed post gate
-    expect(vmPrepare).toMatch(/esellar-anchor status/);
+    expect(vmPrepare).toMatch(/kampodine-anchor status/);
   });
 
   // NOTE: the flip-tooling half of the protocol (writing
-  // /etc/esellar/anchor.conf at flip time) is pinned behaviorally in
+  // /etc/kampodine/anchor.conf at flip time) is pinned behaviorally in
   // bluegreen-provision.test.ts — this file pins the guest side only.
 });

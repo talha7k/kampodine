@@ -8,7 +8,7 @@
 # API call, rollback is the same call reversed.
 #
 # Colors are instance display names: <app>-blue / <app>-green (defaults:
-# esellar-blue / esellar-green).
+# kampodine-blue / kampodine-green).
 # The reserved IP is derived from live OCI state — no local state file.
 #
 # Usage:
@@ -20,7 +20,7 @@
 #
 # FLIP = ACME-FIRST:
 #   1. health gate on the target's own IP
-#   2. anchor.conf written on the TARGET guest over ssh — the esellar-anchor
+#   2. anchor.conf written on the TARGET guest over ssh — the kampodine-anchor
 #      watcher service (shipped by vm-prepare) configures the anchor private
 #      address within one interval; flip waits for `ip addr` to show it
 #   3. OCI assigns the reserved IP to the target's anchor (secondary private
@@ -49,7 +49,7 @@
 # instead — it runs the same ACME-first sequence there.
 #
 # provision has TWO routes:
-#   1. NATIVE  — a UEFI_64 esellar-alpine* custom image exists in the
+#   1. NATIVE  — a UEFI_64 kampodine-alpine* custom image exists in the
 #      compartment: launch it directly (the golden image boots as-is).
 #   2. INJECT (provision-via-migrate) — OCI pins imported custom images to
 #      firmware=BIOS and A1/Ampere is UEFI-only, but the template instance
@@ -63,7 +63,7 @@
 #      'gunzip | sudo dd', reboot, verify /etc/alpine-release). The instance
 #      record keeps the platform image metadata — exactly like the template.
 #
-# Env: OCI_PROFILE (default esellar-api), OCI_COMPARTMENT (default esellar).
+# Env: OCI_PROFILE (default: "default"), OCI_COMPARTMENT (required).
 # Injection extras: ALPINE_QCOW2 (golden disk path), OPS_SSH_PUBKEY (ops
 # public key for the platform-image launch), PLATFORM_SSH_USER (default
 # ubuntu), INJECT_PROBE_SLEEP / INJECT_PROBE_TRIES (ssh wait tuning).
@@ -71,8 +71,8 @@
 # loopback; the reserved IP is checked over :80 with the prod Host header).
 set -euo pipefail
 
-PROFILE="${OCI_PROFILE:-esellar-api}"
-COMPARTMENT_NAME="${OCI_COMPARTMENT:-esellar}"
+PROFILE="${OCI_PROFILE:-default}"
+COMPARTMENT_NAME="${OCI_COMPARTMENT:-kampodine}"
 APP_HOST_HEADER="${APP_HOST_HEADER:-app.example.com}"
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 SSH_OPTS=(-o ConnectTimeout=6 -o BatchMode=yes -o StrictHostKeyChecking=accept-new)
@@ -86,7 +86,7 @@ usage() {
   cat <<'EOF'
 
 Each sub-step has its own --help: status | init | provision | flip | rollback.
-Env: OCI_PROFILE (default esellar-api), OCI_COMPARTMENT (default esellar).
+Env: OCI_PROFILE (default: "default"), OCI_COMPARTMENT (required).
 
 Examples:
   kampodine bluegreen status
@@ -181,7 +181,7 @@ compartment_ocid() {
 instance_by_color() {
   local comp="$1" color="$2" row
   row="$(oci compute instance list -c "$comp" --profile "$PROFILE" \
-    --display-name "esellar-$color" --lifecycle-state RUNNING \
+    --display-name "kampodine-$color" --lifecycle-state RUNNING \
     --query 'sort_by(data, &"time-created")[-1] | ["id", "availability-domain"] | join('\'' '\'', @)' \
     --raw-output 2>/dev/null || true)"
   [[ -n "$row" ]] || return 0
@@ -240,7 +240,7 @@ reserved_anchor_ip() {
     return 0
   fi
   oci network private-ip create --profile "$PROFILE" --vnic-id "$vnic" \
-    --display-name "esellar-reserved-anchor" \
+    --display-name "kampodine-reserved-anchor" \
     --query 'data.id' --raw-output 2>/dev/null
 }
 
@@ -249,9 +249,9 @@ FLIP_POLL_SLEEP="${FLIP_POLL_SLEEP:-5}"
 FLIP_ADDR_TRIES="${FLIP_ADDR_TRIES:-12}"   # guest watcher pickup: 12 x 5s = 60s
 FLIP_ACME_TRIES="${FLIP_ACME_TRIES:-24}"   # LE HTTP-01: 24 x 5s = 120s
 
-# Guest anchor protocol (the esellar-anchor watcher half lives in
-# infra/alpine-host/ansible/roles/container-service/files/esellar-anchor.sh —
-# both halves of the conf path must stay in sync: /etc/esellar/anchor.conf).
+# Guest anchor protocol (the kampodine-anchor watcher half lives in
+# infra/alpine-host/ansible/roles/container-service/files/kampodine-anchor.sh —
+# both halves of the conf path must stay in sync: /etc/kampodine/anchor.conf).
 # Remote commands are composed client-side BY DESIGN (vm-prepare convention);
 # the interpolated values are OCI-API derived and regex-gated at the call
 # sites, never user input.
@@ -260,7 +260,7 @@ FLIP_ACME_TRIES="${FLIP_ACME_TRIES:-24}"   # LE HTTP-01: 24 x 5s = 120s
 write_anchor_conf() {
   local ip="$1" addr="$2"
   ssh "${SSH_OPTS[@]}" "root@$ip" \
-    "umask 077; mkdir -p /etc/esellar; printf 'ANCHOR_ADDR=%s\nANCHOR_IFACE=\n' '$addr' > /etc/esellar/anchor.conf && echo ANCHOR_CONF_WRITTEN"
+    "umask 077; mkdir -p /etc/kampodine; printf 'ANCHOR_ADDR=%s\nANCHOR_IFACE=\n' '$addr' > /etc/kampodine/anchor.conf && echo ANCHOR_CONF_WRITTEN"
 }
 
 # shellcheck disable=SC2029
@@ -274,7 +274,7 @@ anchor_addr_ready() {
 read_anchor_conf_addr() {
   local ip="$1" line addr
   line="$(ssh "${SSH_OPTS[@]}" "root@$ip" \
-    'grep -h "^ANCHOR_ADDR=" /etc/esellar/anchor.conf 2>/dev/null | head -n 1' 2>/dev/null || true)"
+    'grep -h "^ANCHOR_ADDR=" /etc/kampodine/anchor.conf 2>/dev/null | head -n 1' 2>/dev/null || true)"
   addr="${line#ANCHOR_ADDR=}"
   addr="${addr//\"/}"
   addr="${addr//\'/}"
@@ -297,7 +297,7 @@ delete_guest_addr() {
 # re-added the address once; retry the delete across one watcher interval.
 cleanup_target_anchor() {
   local ip="$1" addr="$2" i
-  ssh "${SSH_OPTS[@]}" "root@$ip" "rm -f /etc/esellar/anchor.conf" >/dev/null 2>&1 || true
+  ssh "${SSH_OPTS[@]}" "root@$ip" "rm -f /etc/kampodine/anchor.conf" >/dev/null 2>&1 || true
   for ((i = 1; i <= 3; i++)); do
     delete_guest_addr "$ip" "$addr"
     anchor_addr_ready "$ip" "$addr" >/dev/null 2>&1 || return 0
@@ -323,7 +323,7 @@ flip_failure_rollback() {
     if [[ "$bpip" == ocid1.privateip* ]]; then
       if oci network public-ip update --public-ip-id "$rocid" --profile "$PROFILE" \
         --private-ip-id "$bpip" --force >/dev/null 2>&1; then
-        say "rolled back to esellar-$ob (existing anchor $bpip)" >&2
+        say "rolled back to kampodine-$ob (existing anchor $bpip)" >&2
         recovered=1
       fi
     fi
@@ -331,14 +331,14 @@ flip_failure_rollback() {
   if (( ! recovered )); then
     if oci network public-ip update --public-ip-id "$rocid" --profile "$PROFILE" \
       --private-ip-id "" --force --wait-for-state AVAILABLE >/dev/null 2>&1; then
-      say "reserved ip UNASSIGNED (dormant) — no existing anchor on esellar-$ob" >&2
+      say "reserved ip UNASSIGNED (dormant) — no existing anchor on kampodine-$ob" >&2
     else
       cleanup_target_anchor "$tpub" "$taddr"
       die "AUTO-ROLLBACK FAILED — reserved ip state unknown; flip manually via console: $rocid"
     fi
   fi
   cleanup_target_anchor "$tpub" "$taddr"
-  say "esellar-$to cleaned (anchor.conf removed, anchor address deleted) — investigate before retrying" >&2
+  say "kampodine-$to cleaned (anchor.conf removed, anchor address deleted) — investigate before retrying" >&2
 }
 
 # instance_healthy <ephemeral_ip> -> ssh + loopback app check.
@@ -349,7 +349,7 @@ instance_healthy() {
   local ip="$1"
   [[ -n "$ip" ]] || return 1
   ssh "${SSH_OPTS[@]}" "root@$ip" \
-    "rc-service esellar-api status >/dev/null 2>&1 && busybox wget -q -O /dev/null http://127.0.0.1:8080/up" 2>/dev/null
+    "rc-service kampodine-api status >/dev/null 2>&1 && busybox wget -q -O /dev/null http://127.0.0.1:8080/up" 2>/dev/null
 }
 
 # instance_wait_running <iid> — poll lifecycle-state to RUNNING. The OCI CLI's
@@ -365,7 +365,7 @@ instance_wait_running() {
       --query 'data."lifecycle-state"' --raw-output 2>/dev/null || true)"
     case "$state" in
       RUNNING) return 0 ;;
-      FAILED | TERMINATED | TERMINATING) die "esellar instance reached $state — nothing to inject, check the console" ;;
+      FAILED | TERMINATED | TERMINATING) die "kampodine instance reached $state — nothing to inject, check the console" ;;
     esac
     sleep "$sleep_s"
   done
@@ -390,7 +390,7 @@ inject_alpine() {
   # the Alpine verify forever. The scrub below
   # clears the phase file between the two boots; the user's file is never
   # touched.
-  kh="$(mktemp "${TMPDIR:-/tmp}/esellar-inject-kh.XXXXXX")"
+  kh="$(mktemp "${TMPDIR:-/tmp}/kampodine-inject-kh.XXXXXX")"
   iss() { ssh -o UserKnownHostsFile="$kh" "${SSH_OPTS[@]}" "$@"; }
   say "inject: waiting for ssh (${ruser}@${ip}, platform-image first boot)…"
   ssh_wait_probe() { iss "${ruser}@${ip}" true; }
@@ -400,7 +400,7 @@ inject_alpine() {
     [[ "$i" == "$probe_tries" ]] && die "ssh never came up on ${ip} (${ruser}) — check the instance console connection"
     sleep "$probe_sleep"
   done
-  raw="$(mktemp "${TMPDIR:-/tmp}/esellar-inject-raw.XXXXXX")"
+  raw="$(mktemp "${TMPDIR:-/tmp}/kampodine-inject-raw.XXXXXX")"
   say "inject: converting ${qcow2} -> raw…"
   qemu-img convert -O raw "$qcow2" "$raw"
   say "inject: streaming golden disk -> ${ip} boot volume (gunzip | dd, conv=fsync)…"
@@ -440,7 +440,7 @@ inject_alpine() {
   done
   rm -f "$kh"
   [[ -n "$rel" ]] || die "injection streamed but no ALPINE 3.x ssh on ${ip} after reboot (got: '${rel:-nothing}') — check the serial console; terminate, do NOT flip to ${color}"
-  say "INJECTED esellar-$color: Alpine ${rel} boots on ${ip} (instance image metadata stays the platform image — like green)"
+  say "INJECTED kampodine-$color: Alpine ${rel} boots on ${ip} (instance image metadata stays the platform image — like green)"
   say "next: kampodine vm-prepare --host root@${ip} -> kampodine deploy --host root@${ip}"
   say "then 'bluegreen.sh flip --to ${color}' (health-gated) once its app checks green."
 }
@@ -458,11 +458,12 @@ for help_arg in "$@"; do
       ;;
   esac
 done
+[[ -n "${OCI_COMPARTMENT:-}" ]] || die "set OCI_COMPARTMENT=<compartment name or ocid> — no default: compartments are account-specific"
 case "$cmd" in
   status)
     comp="$(compartment_ocid)"
     rp="$(reserved_ip "$comp")"
-    say "== esellar blue/green pair (compartment $COMPARTMENT_NAME) =="
+    say "== kampodine blue/green pair (compartment $COMPARTMENT_NAME) =="
     if [[ -n "$rp" ]]; then
       read -r rocid raddr rholder <<<"$rp"
       say "reserved IP : $raddr ($rocid)"
@@ -475,9 +476,9 @@ case "$cmd" in
       if [[ -n "$row" ]]; then
         read -r iid pub ad <<<"$row"
         if instance_healthy "$pub"; then verdict=HEALTHY; else verdict=UNHEALTHY/unreachable; fi
-        say "esellar-$color : $iid  ip=${pub:-none}  ad=${ad:-?}  app=$verdict"
+        say "kampodine-$color : $iid  ip=${pub:-none}  ad=${ad:-?}  app=$verdict"
       else
-        say "esellar-$color : not provisioned"
+        say "kampodine-$color : not provisioned"
       fi
     done
     ;;
@@ -491,7 +492,7 @@ case "$cmd" in
       exit 0
     fi
     addr="$(oci network public-ip create -c "$comp" --profile "$PROFILE" \
-      --lifetime RESERVED --display-name esellar-active \
+      --lifetime RESERVED --display-name kampodine-active \
       --query 'data."ip-address"' --raw-output)"
     say "created DORMANT reserved IP: $addr (unassigned — no instance attached)"
     say "Point DNS/SSLIP at this address when the pair goes active."
@@ -502,25 +503,25 @@ case "$cmd" in
     color="${1:-}"
     [[ "$color" == blue || "$color" == green ]] || die "usage: kampodine bluegreen provision <blue|green>"
     comp="$(compartment_ocid)"
-    instance_by_color "$comp" "$color" | grep -q . && die "esellar-$color already RUNNING"
+    instance_by_color "$comp" "$color" | grep -q . && die "kampodine-$color already RUNNING"
     # base: the OTHER color's AD + subnet (same fault domain layout), golden image
     other=green; [[ "$color" == green ]] && other=blue
     orow="$(instance_by_color "$comp" "$other")"
-    [[ -n "$orow" ]] || die "esellar-$other not RUNNING — need its AD/subnet as the pair template"
+    [[ -n "$orow" ]] || die "kampodine-$other not RUNNING — need its AD/subnet as the pair template"
     # instance_by_color rows are "<ocid> <ephemeral_public_ip> <ad>" — field 2
     # is the IP, the AD is field 3 (launching with the IP as AD fails).
     read -r oiid _ oad <<<"$orow"
     subnet="$(oci compute vnic-attachment list -c "$comp" --profile "$PROFILE" \
       --instance-id "$oiid" --query 'data[0]."subnet-id"' --raw-output)"
 
-    # Route selection. NATIVE only with a UEFI_64 esellar-alpine* custom image:
+    # Route selection. NATIVE only with a UEFI_64 kampodine-alpine* custom image:
     # OCI pins IMPORTED images to firmware=BIOS and A1 is UEFI-only, so a BIOS
     # verdict means the import would die at launch (Shape ... is not valid for
     # image) — skip it. Otherwise take the template's LIVE image-id from its
     # instance record and inject the golden disk (provision-via-migrate).
     mode="" image=""
     custom="$(oci compute image list -c "$comp" --profile "$PROFILE" --all --sort-by TIMECREATED \
-      --query "data[?\"display-name\" != null && starts_with(\"display-name\", 'esellar-alpine')] | [0].id" \
+      --query "data[?\"display-name\" != null && starts_with(\"display-name\", 'kampodine-alpine')] | [0].id" \
       --raw-output 2>/dev/null || true)"
     if [[ "$custom" == ocid1.image* ]]; then
       fw="$(oci compute image get --image-id "$custom" --profile "$PROFILE" \
@@ -528,7 +529,7 @@ case "$cmd" in
       if [[ "$fw" == "UEFI_64" ]]; then
         image="$custom" mode="native"
       else
-        say "note: newest esellar-alpine* custom image is firmware=${fw:-unknown} — A1 rejects BIOS-pinned imports, skipping to the platform-image + injection route"
+        say "note: newest kampodine-alpine* custom image is firmware=${fw:-unknown} — A1 rejects BIOS-pinned imports, skipping to the platform-image + injection route"
       fi
     fi
     if [[ -z "$image" ]]; then
@@ -536,7 +537,7 @@ case "$cmd" in
         --query 'data."image-id"' --raw-output 2>/dev/null || true)"
       [[ "$image" == ocid1.image* ]] || die "template instance has no resolvable image-id — cannot launch or inject"
       mode="inject"
-      qcow2="${ALPINE_QCOW2:-${REPO_ROOT}/infra/alpine-host/build/esellar-alpine-3.22.6-aarch64.qcow2}"
+      qcow2="${ALPINE_QCOW2:-${REPO_ROOT}/infra/alpine-host/build/kampodine-alpine-3.22.6-aarch64.qcow2}"
       [[ -f "$qcow2" ]] || die "golden qcow2 not found: $qcow2 (build via packer, or set ALPINE_QCOW2)"
       command -v qemu-img >/dev/null 2>&1 || die "qemu-img not found in PATH (brew install qemu) — required for the qcow2 -> raw conversion"
       # ops ssh public key for the platform-image first boot. OPS_SSH_PUBKEY
@@ -549,22 +550,22 @@ case "$cmd" in
         keyfile="$OPS_SSH_PUBKEY"
       else
         agent_keys="$(ssh-add -L 2>/dev/null | grep -v '\.pub$' || true)"
-        [[ -n "$agent_keys" ]] || die "no ssh key available: OPS_SSH_PUBKEY unset and ssh-add lists no keys (ssh-add ~/.ssh/id_ed25519-esellar, or set OPS_SSH_PUBKEY)"
-        keyfile="$(mktemp "${TMPDIR:-/tmp}/esellar-ops-pubkey.XXXXXX")"
+        [[ -n "$agent_keys" ]] || die "no ssh key available: OPS_SSH_PUBKEY unset and ssh-add lists no keys (ssh-add ~/.ssh/id_ed25519-kampodine, or set OPS_SSH_PUBKEY)"
+        keyfile="$(mktemp "${TMPDIR:-/tmp}/kampodine-ops-pubkey.XXXXXX")"
         printf '%s\n' "$agent_keys" > "$keyfile"
         chmod 600 "$keyfile"
       fi
     fi
 
-    say "launching esellar-$color: image=${image:0:60}… ad=$oad subnet=${subnet:0:60}… mode=$mode"
+    say "launching kampodine-$color: image=${image:0:60}… ad=$oad subnet=${subnet:0:60}… mode=$mode"
     # NOTE: --profile stays ON the launch line (script-gates static scan reads
     # the invocation line, not array contents).
     launch_args=(-c "$comp" --availability-domain "$oad" --subnet-id "$subnet"
       --image-id "$image" --shape VM.Standard.A1.Flex --shape-config '{"ocpus":2,"memoryInGBs":12}'
-      --assign-public-ip true --display-name "esellar-$color")
+      --assign-public-ip true --display-name "kampodine-$color")
     [[ "$mode" == "inject" ]] && launch_args+=(--ssh-authorized-keys-file "$keyfile")
     iid="$(oci compute instance launch "${launch_args[@]}" --profile "$PROFILE" --query 'data.id' --raw-output)"
-    say "LAUNCHED esellar-$color: $iid"
+    say "LAUNCHED kampodine-$color: $iid"
     if [[ "$mode" == "native" ]]; then
       say "next: wait RUNNING -> ssh in -> kampodine vm-prepare -> kampodine deploy --host root@<ephemeral-ip>"
       say "then 'bluegreen.sh flip --to $color' (health-gated) once its app checks green."
@@ -594,16 +595,16 @@ case "$cmd" in
     read -r rocid raddr _ <<<"$rp"
     rhost="${raddr//./-}.sslip.io"
     trow="$(instance_by_color "$comp" "$to")"
-    [[ -n "$trow" ]] || die "esellar-$to is not RUNNING — nothing to flip to"
+    [[ -n "$trow" ]] || die "kampodine-$to is not RUNNING — nothing to flip to"
     read -r tiid tpub _ <<<"$trow"
     tvnic="$(primary_vnic_of "$tiid")"
-    [[ -n "$tvnic" ]] || die "no primary VNIC on esellar-$to"
+    [[ -n "$tvnic" ]] || die "no primary VNIC on kampodine-$to"
     tpip="$(reserved_anchor_ip "$tvnic")"
-    [[ "$tpip" == ocid1.privateip* ]] || die "could not resolve/create the reserved-anchor secondary private ip on esellar-$to"
+    [[ "$tpip" == ocid1.privateip* ]] || die "could not resolve/create the reserved-anchor secondary private ip on kampodine-$to"
     if instance_healthy "$tpub"; then
-      say "target health: esellar-$to app HEALTHY on its own IP"
+      say "target health: kampodine-$to app HEALTHY on its own IP"
     else
-      (( force )) || die "esellar-$to app UNHEALTHY — refusing flip (override: --force)"
+      (( force )) || die "kampodine-$to app UNHEALTHY — refusing flip (override: --force)"
       say "target health: UNHEALTHY — flipping anyway (--force)"
     fi
 
@@ -611,19 +612,19 @@ case "$cmd" in
     # once the hostname resolves to the reserved ip AND routes to the target,
     # so the guest anchor address goes FIRST, then the assign, then the cert.
     ob=green; [[ "$to" == green ]] && ob=blue
-    say "flip[1/4]: anchor conf -> esellar-$to guest ($tpub), watcher configures the address"
+    say "flip[1/4]: anchor conf -> kampodine-$to guest ($tpub), watcher configures the address"
     tsubnet="$(oci compute vnic-attachment list -c "$comp" --profile "$PROFILE" \
       --instance-id "$tiid" --query 'data[0]."subnet-id"' --raw-output 2>/dev/null || true)"
-    [[ "$tsubnet" == ocid1.subnet* ]] || die "could not resolve esellar-$to's subnet id"
+    [[ "$tsubnet" == ocid1.subnet* ]] || die "could not resolve kampodine-$to's subnet id"
     tcidr="$(oci network subnet get --subnet-id "$tsubnet" --profile "$PROFILE" \
       --query 'data."cidr-block"' --raw-output 2>/dev/null || true)"
-    [[ "$tcidr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]] || die "could not resolve esellar-$to's subnet cidr (got: ${tcidr:-none})"
+    [[ "$tcidr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]] || die "could not resolve kampodine-$to's subnet cidr (got: ${tcidr:-none})"
     tanchor_addr="$(oci network private-ip get --private-ip-id "$tpip" --profile "$PROFILE" \
       --query 'data."ip-address"' --raw-output 2>/dev/null || true)"
-    [[ "$tanchor_addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "could not resolve the anchor private address on esellar-$to"
+    [[ "$tanchor_addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "could not resolve the anchor private address on kampodine-$to"
     taddr_cidr="${tanchor_addr}/${tcidr##*/}"
     if ! write_anchor_conf "$tpub" "$taddr_cidr" >/dev/null 2>&1; then
-      die "anchor.conf write failed on esellar-$to ($tpub) — nothing mutated, flip aborted"
+      die "anchor.conf write failed on kampodine-$to ($tpub) — nothing mutated, flip aborted"
     fi
     addr_ok=0
     for ((i = 1; i <= FLIP_ADDR_TRIES; i++)); do
@@ -632,15 +633,15 @@ case "$cmd" in
     done
     if (( ! addr_ok )); then
       cleanup_target_anchor "$tpub" "$taddr_cidr"
-      die "guest watcher never configured $taddr_cidr on esellar-$to — is rc-service esellar-anchor running? (conf removed, NOTHING mutated)"
+      die "guest watcher never configured $taddr_cidr on kampodine-$to — is rc-service kampodine-anchor running? (conf removed, NOTHING mutated)"
     fi
-    say "flip[2/4]: guest answers on $taddr_cidr — reserved $raddr -> esellar-$to (anchor $tpip)"
+    say "flip[2/4]: guest answers on $taddr_cidr — reserved $raddr -> kampodine-$to (anchor $tpip)"
     oci network public-ip update --public-ip-id "$rocid" --profile "$PROFILE" \
       --private-ip-id "$tpip" --force --wait-for-state ASSIGNED >/dev/null \
       || { cleanup_target_anchor "$tpub" "$taddr_cidr"; die "OCI flip call failed — guest conf removed; run 'kampodine bluegreen status'"; }
-    say "flip[3/4]: reserved IP ASSIGNED — registering $rhost on esellar-$to's kamal-proxy (ACME HTTP-01 through the reserved ip)…"
+    say "flip[3/4]: reserved IP ASSIGNED — registering $rhost on kampodine-$to's kamal-proxy (ACME HTTP-01 through the reserved ip)…"
     if ! ssh "${SSH_OPTS[@]}" "root@$tpub" \
-      "podman exec kamal-proxy kamal-proxy deploy esellar-api --host=$rhost --target=esellar-api:8080 --tls --health-check-path=/api/auth/ok"; then
+      "podman exec kamal-proxy kamal-proxy deploy kampodine-api --host=$rhost --target=kampodine-api:8080 --tls --health-check-path=/api/auth/ok"; then
       flip_failure_rollback "$to" "$ob" "$comp" "$rocid" "$tpub" "$taddr_cidr"
       exit 1
     fi
@@ -656,14 +657,14 @@ case "$cmd" in
     fi
     served="$(curl -s -m 8 --resolve "$rhost:443:$raddr" "https://$rhost/api/auth/ok" || true)"
     say "flip[4/4]: cert for $rhost VALID + serving through $raddr"
-    say "FLIPPED: https://$raddr/ (https://$rhost/) now serves from esellar-$to"
+    say "FLIPPED: https://$raddr/ (https://$rhost/) now serves from kampodine-$to"
     say "served /api/auth/ok: ${served:-<no body>}"
     ;;
 
   rollback)
     # DORMANT rollback: holder guest cleanup
     # (anchor.conf removal + anchor address delete — the flip tool's explicit
-    # job; the esellar-anchor watcher is add-only) then the OCI unassign
+    # job; the kampodine-anchor watcher is add-only) then the OCI unassign
     # (documented CLI semantics: an empty --private-ip-id unassigns). For a
     # real pair where traffic must land on the other color, use
     # 'flip --to <other>' — it runs the full ACME-first sequence there.
@@ -692,10 +693,10 @@ case "$cmd" in
     if [[ -z "$holder_color" ]]; then
       say "warning: reserved $raddr held by an anchor of neither RUNNING color (terminated instance?) — unassigning without guest cleanup"
     else
-      say "current holder: esellar-$holder_color ($holder_ip) — cleaning the guest anchor, then unassigning"
+      say "current holder: kampodine-$holder_color ($holder_ip) — cleaning the guest anchor, then unassigning"
       conf_addr="$(read_anchor_conf_addr "$holder_ip")"
       cleanup_target_anchor "$holder_ip" "$conf_addr"
-      say "esellar-$holder_color guest cleaned (anchor.conf removed${conf_addr:+, address $conf_addr deleted})"
+      say "kampodine-$holder_color guest cleaned (anchor.conf removed${conf_addr:+, address $conf_addr deleted})"
     fi
     say "unassigning reserved $raddr (-> dormant)…"
     oci network public-ip update --public-ip-id "$rocid" --profile "$PROFILE" \

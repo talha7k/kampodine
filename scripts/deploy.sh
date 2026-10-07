@@ -3,7 +3,7 @@
 #
 #   Mac:  podman build (VITE_BUILD_ID=<sha>) -> podman save (docker-archive)
 #         streamed over SSH -> podman load on the VM
-#   VM:   retag to 127.0.0.1:5000/esellar-api:latest -> rc-service esellar-api
+#   VM:   retag to 127.0.0.1:5000/kampodine-api:latest -> rc-service kampodine-api
 #         restart (the OpenRC supervise-daemon service re-runs the whole
 #         `podman run` against :latest — no pull in the run, so restarts are
 #         offline-safe) -> exec-fetch health probe with served-sha verify ->
@@ -26,12 +26,12 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-ESPELLAR_HOST="${ESPELLAR_HOST:-}"
+KAMPODINE_HOST="${KAMPODINE_HOST:-}"
 PROXY_HOST="${PROXY_HOST:-app.example.com}"
-ENV_FILE_REMOTE="/etc/esellar/env"
-DEPLOYED_SHA_FILE="/etc/esellar/deployed-sha"
+ENV_FILE_REMOTE="/etc/kampodine/env"
+DEPLOYED_SHA_FILE="/etc/kampodine/deployed-sha"
 ENV_CLEAR_KEYS='^(NODE_ENV|PORT|LIBSQL_TENANT_DIR|LIBSQL_API_MOUNT|STATIC_SPA_MOUNT)='
-IMAGE="127.0.0.1:5000/esellar-api"
+IMAGE="127.0.0.1:5000/kampodine-api"
 
 MODE="deploy"
 VERSION=""
@@ -40,8 +40,7 @@ REFRESH_CONFIG=0
 # SSH key resolution — GENERIC, no hardcoded personal paths:
 #   1. --ssh-key flag           (explicit, per-invocation)
 #   2. KAMPODINE_SSH_KEY env    (project-level: direnv / .envrc / export)
-#   3. ESSELLAR_SSH_KEY env     (legacy alias, kept for existing setups)
-#   4. empty → ssh-agent and/or the operator's ~/.ssh/config Host block
+#   3. empty → ssh-agent and/or the operator's ~/.ssh/config Host block
 #      (the POSIX way: per-host IdentityFile belongs in ssh config, not here)
 if [ -n "${KAMPODINE_SSH_KEY:-}" ]; then
     SSH_KEY="$KAMPODINE_SSH_KEY"
@@ -66,15 +65,15 @@ EOF
   grep '^#   kampodine deploy' "$0" | sed 's/^#   //'
   cat <<'EOF'
 
-Host/key resolution: --host | ESPELLAR_HOST; --ssh-key | KAMPODINE_SSH_KEY |
-ESPELLAR_SSH_KEY | ssh-agent / ~/.ssh/config.
+Host/key resolution: --host | KAMPODINE_HOST; --ssh-key | KAMPODINE_SSH_KEY |
+KAMPODINE_SSH_KEY | ssh-agent / ~/.ssh/config.
 EOF
   exit 0
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --host) ESPELLAR_HOST="$2"; shift 2 ;;
+    --host) KAMPODINE_HOST="$2"; shift 2 ;;
     --ssh-key) SSH_KEY="$2"; shift 2 ;;
     --version) VERSION="$2"; MODE="version"; shift 2 ;;
     --rollback)
@@ -89,13 +88,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 [[ "$VERSION" != *..* && "$VERSION" =~ ^[0-9a-f]{4,40}$|^$ ]] || die "--version must be a git sha fragment"
-[ -n "$ESPELLAR_HOST" ] || die "set ESPELLAR_HOST=root@<vm-ip> (or a ~/.ssh/config Host alias via --host)"
+[ -n "$KAMPODINE_HOST" ] || die "set KAMPODINE_HOST=root@<vm-ip> (or a ~/.ssh/config Host alias via --host)"
 
 SSH_ARGS=(-o ConnectTimeout=10 -o BatchMode=yes)
 [[ -n "$SSH_KEY" ]] && SSH_ARGS+=(-i "$SSH_KEY")
 # $1 is a composed remote command — client-side expansion is the design.
 # shellcheck disable=SC2029
-vm() { ssh "${SSH_ARGS[@]}" "$ESPELLAR_HOST" "$1"; }
+vm() { ssh "${SSH_ARGS[@]}" "$KAMPODINE_HOST" "$1"; }
 
 # --- macOS ssh-agent quirk (first deploy from a fresh machine) ---------------
 if [[ "$(uname -s)" == "Darwin" ]]; then
@@ -141,7 +140,7 @@ vm "podman tag $IMAGE:$VER $IMAGE:latest" || die "stream retag failed"
 
 # --- env file from varlock (schema-only from HEAD; secrets from pass) ----------
 say "generating $ENV_FILE_REMOTE from varlock (schema-only from HEAD; secrets resolve from pass — no plaintext secret files)…"
-ENV_TMP="$(mktemp /tmp/esellar-env.XXXXXX)"
+ENV_TMP="$(mktemp /tmp/kampodine-env.XXXXXX)"
 trap 'rm -f "$ENV_TMP"' EXIT
 # Schema-only resolution: extract the COMMITTED schema into a scratch dir
 # inside the repo (plugin resolution needs node_modules; local
@@ -158,20 +157,20 @@ git -C "$REPO_ROOT" archive HEAD apps/api/.env.schema | tar -x -C "$ENV_SCHEMA_D
   | sed -E 's/^([A-Za-z_][A-Za-z0-9_]*)="(.*)"$/\1=\2/' > "$ENV_TMP" \
   || die "varlock env generation failed (pass store unlocked? schema committed?)"
 printf 'API_GIT_SHA=%s\n' "$VER" >> "$ENV_TMP"
-scp -q "${SSH_ARGS[@]}" "$ENV_TMP" "$ESPELLAR_HOST:/etc/esellar/env.tmp"
-vm "mv /etc/esellar/env.tmp $ENV_FILE_REMOTE && chmod 600 $ENV_FILE_REMOTE"
+scp -q "${SSH_ARGS[@]}" "$ENV_TMP" "$KAMPODINE_HOST:/etc/kampodine/env.tmp"
+vm "mv /etc/kampodine/env.tmp $ENV_FILE_REMOTE && chmod 600 $ENV_FILE_REMOTE"
 rm -f "$ENV_TMP"
 rm -rf "$ENV_SCHEMA_DIR"
 
 if [[ $REFRESH_CONFIG -eq 1 ]]; then
   say "ansible container-service refresh (--tags container-service — rc script/config drift repair)…"
   (cd "$REPO_ROOT/infra/alpine-host/ansible" \
-    && ansible-playbook -i "esellar-vm ansible_host=${ESPELLAR_HOST#*@},ansible_user=${ESPELLAR_HOST%%@*}," playbook.yml --tags container-service --private-key "${SSH_KEY:-~/.ssh/id_ed25519}") \
+    && ansible-playbook -i "kampodine-vm ansible_host=${KAMPODINE_HOST#*@},ansible_user=${KAMPODINE_HOST%%@*}," playbook.yml --tags container-service --private-key "${SSH_KEY:-~/.ssh/id_ed25519}") \
     || die "ansible playbook failed"
 fi
 
-say "rc-service esellar-api restart (supervise-daemon: stop-old/start-new podman run on the retagged :latest)…"
-vm "rc-service esellar-api restart" || die "esellar-api restart failed (rc-service esellar-api status)"
+say "rc-service kampodine-api restart (supervise-daemon: stop-old/start-new podman run on the retagged :latest)…"
+vm "rc-service kampodine-api restart" || die "kampodine-api restart failed (rc-service kampodine-api status)"
 
 say "health probe (host-side wget /api/auth/ok + served-sha — works for node AND scratch images)…"
 HEALTH_OK=0
@@ -188,17 +187,17 @@ for _ in $(seq 1 30); do
   sleep 3
 done
 if [[ $HEALTH_OK -ne 1 ]]; then
-  vm "podman logs --tail 30 esellar-api 2>&1" || true
-  vm "rc-service esellar-api status 2>&1" || true
+  vm "podman logs --tail 30 kampodine-api 2>&1" || true
+  vm "rc-service kampodine-api status 2>&1" || true
   PREV_HINT="$(vm "test -f $DEPLOYED_SHA_FILE && cat $DEPLOYED_SHA_FILE" 2>/dev/null || true)"
   die "container never became healthy — rollback: kampodine deploy --rollback${PREV_HINT:+ $PREV_HINT}"
 fi
-CANARY="$(vm "podman logs esellar-api 2>&1 | grep -c ENV_IMPORT_SUSPECT || true")"
+CANARY="$(vm "podman logs kampodine-api 2>&1 | grep -c ENV_IMPORT_SUSPECT || true")"
 say "container healthy, env-canary hits: $CANARY"
 
 say "kamal-proxy re-point (podman exec — same invocation kamal used)…"
 if vm "podman ps --format '{{.Names}}' | grep -qx kamal-proxy"; then
-  vm "podman exec kamal-proxy kamal-proxy deploy esellar-api --host=$PROXY_HOST --target=esellar-api:8080 --tls --health-check-path=/api/auth/ok" \
+  vm "podman exec kamal-proxy kamal-proxy deploy kampodine-api --host=$PROXY_HOST --target=kampodine-api:8080 --tls --health-check-path=/api/auth/ok" \
     || die "proxy re-point failed (podman logs kamal-proxy)"
 else
   say "  kamal-proxy not running — skipping re-point"
