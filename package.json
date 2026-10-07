@@ -1,0 +1,35 @@
+{
+  "name": "kampodine",
+  "version": "0.2.2",
+  "description": "Kamal-style deploys for Alpine + Podman hosts, built on kamal-proxy",
+  "license": "AGPL-3.0",
+  "type": "module",
+  "bin": {
+    "kampodine": "./cli.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:exact": "vitest run"
+  },
+  "files": [
+    "cli.js",
+    "scripts/",
+    "kampodine.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "vite": "^8.0.16",
+    "vitest": "^4.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/talha7k/kampodine.git"
+  },
+  "homepage": "https://github.com/talha7k/kampodine#readme",
+  "bugs": {
+    "url": "https://github.com/talha7k/kampodine/issues"
+  }
+}
