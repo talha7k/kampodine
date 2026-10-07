@@ -55,7 +55,7 @@ beforeEach(() => {
   writeFileSync(fixture, REMOTE_ENV_FIXTURE);
 
   // ssh shim: the remote command arrives as the LAST argv.
-  //  - `cat /etc/esellar/env`  -> emit the fixture (list/pull)
+  //  - `cat /etc/kampodine/env`  -> emit the fixture (list/pull)
   //  - `umask 077; cat > …`    -> consume stdin into the sink (push upload)
   //  - anything else           -> log the command, consume stdin
   writeFileSync(
@@ -64,7 +64,7 @@ beforeEach(() => {
 cmd="\${*: -1}"
 printf '%s\\n' "$cmd" >> "${sshLog}"
 case "$cmd" in
-  "cat /etc/esellar/env") cat "${join(workDir, "remote-env-fixture")}"; exit 0 ;;
+  "cat /etc/kampodine/env") cat "${join(workDir, "remote-env-fixture")}"; exit 0 ;;
   *"cat > "*) cat > "${pushSink}"; exit 0 ;;
   *) cat >/dev/null; exit 0 ;;
 esac
@@ -103,7 +103,7 @@ function runEnv(args: string[]): CliResult {
     env: {
       ...process.env,
       PATH: `${stubDir}:/usr/bin:/bin`,
-      ESPELLAR_HOST: "root@203.0.113.9", // TEST-NET-3, never routed
+      KAMPODINE_HOST: "root@203.0.113.9", // TEST-NET-3, never routed
     },
   });
   return {
@@ -254,13 +254,13 @@ describe("kampodine env — fingerprint masking", () => {
       env: {
         ...process.env,
         PATH: `${stubDir}:/usr/bin:/bin`,
-        ESPELLAR_HOST: "",
+        KAMPODINE_HOST: "",
         KAMPODINE_SSH_KEY: "",
       },
     });
     expect(result.status).toBe(1);
     const combined = `${result.stderr}${result.stdout}`;
     expect(combined).toContain("--host");
-    expect(combined).toContain("ESPELLAR_HOST");
+    expect(combined).toContain("KAMPODINE_HOST");
   });
 });
