@@ -48,12 +48,28 @@ kampodine deploy:
 - **`kampodine deploy`** — stream deploy; `--version <sha>` restreams an
   existing build; `--rollback [sha]` is an instant image-tag rollback (the
   previous image stays on the VM for exactly this)
+- **`kampodine env`** — manage the remote app env file (`/etc/esellar/env`,
+  0600 root) without ever printing a secret: `list` shows KEY + fingerprints
+  only (value length + first 2 chars), `push --file <env>` uploads over ssh
+  stdin into a 0600 temp + atomic `mv`, `pull` streams the raw payload to
+  stdout or `--out` (written 0600). Host/key resolution is identical to
+  deploy: `--host root@<ip>` | `ESPELLAR_HOST`, `--ssh-key <path>` |
+  `KAMPODINE_SSH_KEY` | ssh-agent. `env fingerprint` previews the masking
+  for any local file — values never leave stdin
+- **`kampodine dns`** — OCI DNS records for the post-sslip.io era:
+  `records`, `add --name <label> --type A|AAAA|CNAME --value <target>
+  [--ttl 300]`, `rm`. Shell out to the `oci` CLI; auth is the OCI config
+  file (`--profile`) or `--instance-principal` ONLY — kampodine never
+  accepts, stores, or logs credential material. `add` merges into the
+  existing RRSet (round-robin survives), `rm` filters it; types/ttl/value
+  are validated locally before any provider call
 - **`kampodine bluegreen status|init|provision|flip|rollback`** — reserved
   public IP management for a two-instance blue/green pair on OCI: zero DNS
   change, health-gated flips with an ACME-first cutover (reserved IP assigned
   → cert issued for its hostname → served sha verified) and automatic
   rollback. A guest **anchor watcher** installed by `vm-prepare` holds the
   flip's IP half — add-only and inert until a flip writes its anchor config.
+  Every sub-step has its own `--help` with usage + examples
 - **`kampodine vm-prepare`** — first-run bootstrap of a bare Alpine host:
   sshd hardening (fresh VMs pass unattended), busybox-wget health probes (the
   golden image ships no curl), the blue-green anchor watcher, the podman
@@ -62,6 +78,11 @@ kampodine deploy:
   imported custom images boot BIOS and are rejected by Ampere (A1) shapes —
   use `bluegreen provision` for ARM targets
 - **`kampodine migrate`** — sqlite migrations over SSH
+
+**Help everywhere:** `kampodine --help` (or bare `kampodine`) prints a
+grouped command index (DEPLOY / INFRA / DNS / ENV, vercel-style); every
+command — and every bluegreen/env/dns sub-step — answers `--help` with
+usage + examples. No subcommand silently does nothing on `--help`.
 
 ## Kamal parity
 
@@ -135,9 +156,9 @@ automation is on the roadmap; today the stream is the automated path.
 ## Prerequisites
 
 Deploy machine: node ≥ 20, podman, ssh key access to the target, `oci` CLI
-(for bluegreen / image-import), and whatever secret-resolution your env-file
-step uses (kampodine is agnostic; the reference setup uses
-[varlock](https://varlock.dev) + pass).
+(for bluegreen / image-import / dns), `jq` (for dns record surgery), and
+whatever secret-resolution your env-file step uses (kampodine is agnostic;
+the reference setup uses [varlock](https://varlock.dev) + pass).
 
 Target: a converged Alpine + Podman + OpenRC host (see above), reachable over
 ssh as root, with kamal-proxy running.

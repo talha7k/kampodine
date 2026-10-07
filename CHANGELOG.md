@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 — 2026-10-07
+
+Full-lifecycle orchestration with first-class help — the "mini vercel CLI"
+release.
+
+- `env` — manage the remote app env file (`/etc/esellar/env`, 0600 root):
+  `list` (KEY + value fingerprints only — length + first 2 chars, values
+  NEVER printed), `push --file` (0600 temp from creation via umask + atomic
+  `mv` + restart hint), `pull` (raw payload to stdout or `--out` 0600, masked
+  summary), `fingerprint` (local masking preview). Host/key resolution
+  identical to deploy (`--host` | `ESPELLAR_HOST`, `--ssh-key` |
+  `KAMPODINE_SSH_KEY` | ssh-agent)
+- `dns` — OCI DNS records: `records`, `add`, `rm`. Shells out to the `oci`
+  CLI; auth is the OCI config file (`--profile`) or `--instance-principal`
+  ONLY — no credential material is ever accepted, stored, or logged. Types
+  pinned to A|AAAA|CNAME; name/type/value/ttl validated locally before any
+  provider call; `add` merges into the existing RRSet, `rm` filters it
+- Help everywhere: `kampodine --help` prints a grouped command index
+  (DEPLOY / INFRA / DNS / ENV, vercel-style); every command and every
+  bluegreen/env/dns sub-step answers `--help`/`-h` with `Usage:` +
+  `Examples:` — pinned by a test that enumerates all of them
+- Tests grew from 38 to 114: help coverage for every subcommand, env
+  fingerprint masking against fixture ssh shims (a value in output fails the
+  suite), dns arg validation, top-level index groups, oci `--profile` gate
+  extended to `dns` calls
+
 ## 0.2.1 — 2026-10-07
 
 Docs, hygiene, and deploy hardening.
